@@ -47,13 +47,10 @@
 #include <hw/inout.h>
 #include <sys/io-char.h>
 
-//#include <bcm2835.h>
 #include "public/arm/pl011.h"
 
-#define PL011_BASE 0x09000000
 #define PL011_LEN 19
 #define PL011_SHIFT 2
-#define PL011_IRQ 33
 #define PL011_BAUD 115200
 
 typedef struct dev_usart {

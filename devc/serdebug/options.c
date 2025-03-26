@@ -54,9 +54,9 @@ options(int argc, char *argv[])
 	unsigned	unit;
 	static TTYINIT_USART devinit = {
 		{
-			PL011_BASE ,	// port
+			0,			// port
 			PL011_SHIFT,			// port_shift
-			PL011_IRQ,			// intr
+			0,			// intr
 			115200,		// baud
 			2048,		// isize
 			2048,		// osize
@@ -100,7 +100,6 @@ options(int argc, char *argv[])
 		 */
 		while (optind < argc && *(optarg = argv[optind]) != '-') {
 			devinit.tty.port = strtoul(optarg, &optarg, 16);
-			devinit.tty.port =PL011_BASE;
 			if (*optarg == ',') {
 				devinit.tty.intr = strtoul(optarg + 1, &optarg, 0);
 			}

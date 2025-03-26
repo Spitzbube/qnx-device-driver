@@ -77,7 +77,7 @@ create_device(TTYINIT_USART *dip, unsigned unit)
 	/*
 	 * Map device registers
 	 */
-	dev->base = mmap_device_io(PL011_LEN, PL011_BASE);
+	dev->base = mmap_device_io(PL011_LEN, dip->tty.port);
 	if (dev->base == (uintptr_t)MAP_FAILED) {
 		perror("USART : MAP_FAILED\n");
 		exit(1);
