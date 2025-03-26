@@ -71,7 +71,7 @@ void
 ser_attach_intr(DEV_USART *dev)
 {
 	uintptr_t	base = dev->base;
-	dev->intr=PL011_IRQ;
+
 	out32(base+PL011_IMSC, PL011_IMSC_CTSRM | PL011_IMSC_RXIM| PL011_IMSC_RTIM |
 			                      (1<<7) | (1<<8) | (1<<9) | PL011_IMSC_OEIM);
 	dev->iid = InterruptAttach(dev->intr, ser_intr, dev, 0, 0);
