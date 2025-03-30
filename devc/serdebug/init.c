@@ -26,7 +26,6 @@
 #include <sys/mman.h>
 #include <pthread.h>
 
-#define PL011_UART_SIZE    0x90
 
 #if 0
 /*
@@ -77,7 +76,7 @@ create_device(TTYINIT_USART *dip, unsigned unit)
 	/*
 	 * Map device registers
 	 */
-	dev->base = mmap_device_io(PL011_LEN, dip->tty.port);
+	dev->base = mmap_device_io(PL011_SIZE, dip->tty.port);
 	if (dev->base == (uintptr_t)MAP_FAILED) {
 		perror("USART : MAP_FAILED\n");
 		exit(1);
@@ -114,7 +113,6 @@ create_device(TTYINIT_USART *dip, unsigned unit)
 	/*
 	 * Attach the resource manager
 	 */
-  //   sleep(1);// test timer
 	ttc(TTC_INIT_ATTACH, &dev->tty, 0);
 
 }
