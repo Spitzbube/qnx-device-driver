@@ -39,7 +39,12 @@ tto(TTYDEV *ttydev, int action, int arg1)
 		return 0;
 
 	case TTO_LINESTATUS:
-		return in32(base + PL011_FR); ;
+#if 0
+		return in32(base + BCM2835_UART0_FR); ;
+#else
+	    fprintf(stderr, "TTO_LINESTATUS: TODO!!!\n");
+		return 0;
+#endif
 
 	case TTO_DATA:
 		break;
@@ -47,24 +52,29 @@ tto(TTYDEV *ttydev, int action, int arg1)
 	default:
 		return 0;
 	}
+
 	while ((bup->cnt > 0 ))
-		{
-		while ( in32(base + PL011_FR) & PL011_FR_TXFF )//#FIX? 1<<7
+	{
+		while ( in32(base + PL011_FR) & 
+			(PL011_FR_TXFF | PL011_FR_BUSY) )
 		{}
-			dev_lock(&dev->tty);
-         	c = tto_getchar(&dev->tty);
-			dev_unlock(&dev->tty);
-			dev->tty.un.s.tx_tmr = 3;		/* Timeout 3 */
-			out32(base + PL011_DR, c);
-			/*
-			 * Clear the OSW_PAGED_OVERRIDE flag as we only want
-			 * one character to be transmitted in this case.
-			 */
-			if (dev->tty.xflags & OSW_PAGED_OVERRIDE)
-			{
-				atomic_clr(&dev->tty.xflags, OSW_PAGED_OVERRIDE);
-				break;
-		    }
+
+		dev_lock(&dev->tty);
+		c = tto_getchar(&dev->tty);
+		dev_unlock(&dev->tty);
+		dev->tty.un.s.tx_tmr = 3;		/* Timeout 3 */
+
+		out32(base + PL011_DR, c);
+
+		/*
+			* Clear the OSW_PAGED_OVERRIDE flag as we only want
+			* one character to be transmitted in this case.
+			*/
+		if (dev->tty.xflags & OSW_PAGED_OVERRIDE)
+		{
+			atomic_clr(&dev->tty.xflags, OSW_PAGED_OVERRIDE);
+			break;
+		}
 	}
 
 	/*
@@ -72,6 +82,7 @@ tto(TTYDEV *ttydev, int action, int arg1)
 	 */
 	return (tto_checkclients(&dev->tty));
 }
+
 
 
 /** Already initialized ,No plans to change the baud rate */
@@ -85,43 +96,39 @@ void ser_stty(DEV_USART *dev)
 	 */
 	switch (dev->tty.c_cflag & CSIZE) {
 	case CS5:
-		mode |= 0 << 5; break;
+		mode |= 0 << 6; break;
 
 	case CS6:
-		mode |= 1 << 5; break;
+		mode |= 1 << 6; break;
 
 	case CS7:
-		mode |= 2 << 5; break;
+		mode |= 2 << 6; break;
 
 	case CS8:
 	default:
-		mode |= 3 << 5; break;
+		mode |= 3 << 6; break;
 	}
 
 	/*
 	 * 2 stop bit ?
 	 */
 	if (dev->tty.c_cflag & CSTOPB)
-		mode |= 1 << 3;
+		mode |= 2 << 12;
 
 	/*
 	 * Parity
 	 */
 	if (dev->tty.c_cflag & PARENB) {
 		if (dev->tty.c_cflag & PARODD)
-			mode &= ~(1 << 2);
-		else
-			mode |= ~(1 << 2);
-		if (dev->tty.c_cflag & PARSTK)
-			mode |= ~(1 << 7);
-		else
-			mode &= ~(1 << 7);
+			mode |= 1 << 9;
 	}
 	else
-		mode &= 1 << 1;
+		mode |= 4 << 9;
 
 	if (mode == dev->mode && dev->tty.baud == dev->baud)
+	{
 		return;
+	}
 
 	dev->baud = dev->tty.baud;
 	dev->mode = mode;
@@ -129,15 +136,15 @@ void ser_stty(DEV_USART *dev)
 	base = dev->base;
 
 	/* Reset UART */
-
-	out16(base + PL011_CR, 0);
-	out16(base+ PL011_ICR, 0x7FF);
-	out16(base + PL011_IBRD, 1);
-	out16(base + PL011_FBRD, 40);
-	out16(base + PL011_LCR_H, PL011_LCR_H_WLEN8 | PL011_LCR_H_FEN);
-	out16(base + PL011_IMSC, PL011_IMSC_CTSRM | PL011_IMSC_RTIM |
-			                       (1 << 7) | (1 << 8) | (1 << 9) | PL011_IMSC_OEIM);
-	out32(base + PL011_CR, PL011_CR_UARTEN | PL011_CR_TXE | PL011_CR_RXE);
-
+#if 0 //TODO
+	out32(base + BCM2835_UART0_CR, 0x00000000);
+	out32(base+ BCM2835_UART0_ICR, 0x7FF);
+	out32(base + BCM2835_UART0_IBRD, 1);
+	out32(base + BCM2835_UART0_FBRD, 40);
+	out32(base + BCM2835_UART0_LCRH, (1 << 4) | (1 << 5) | (1 << 6));
+	out32(base + BCM2835_UART0_IMSC, (1 << 1) | (1 << 6) |
+			                       (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10));
+	out32(base + BCM2835_UART0_CR, (1 << 0) | (1 << 8) | (1 << 9));
+#endif
 }
 

@@ -23,32 +23,38 @@
 
 #include "externs.h"
 
+#if 0
+
 static inline int tx_interrupt(DEV_USART *dev)
 {
 	dev->tty.un.s.tx_tmr = 0;	/* clear Timeout */
 	return tto(&dev->tty, TTO_DATA, 0);
 }
 
-static inline int rx_interrupt(DEV_USART *dev)
+#endif
+
+
+static inline int do_interrupt(DEV_USART *dev, int id)
 {
 	int	 status = 0;
 	uintptr_t	base = dev->base;
 	unsigned    key = 0;
-	while (!(in32(base + PL011_FR) & PL011_FR_RXFE ))
+	unsigned	mask = in32(base + PL011_MIS);
+
+	if (mask & (PL011_MIS_RXMIS | PL011_MIS_RTMIS))
 	{
-		key = in32(base + PL011_DR);
-		status |= tti(&dev->tty, key);
+		out32(base + PL011_ICR, PL011_ICR_RXIC | PL011_ICR_RTIC);
+
+		while (!(in32(base + PL011_FR) & PL011_FR_RXFE))
+		{
+			key = in32(base + PL011_DR);
+			status |= tti(&dev->tty, key);
+		}
 	}
-	out32(base+ PL011_ICR, 0x7FF);
+
 	return status;
 }
 
-static inline int do_interrupt(DEV_USART *dev, int id)
-{
-	int	sts;
-	sts = rx_interrupt(dev);
-	return sts;
-}
 
 /*
  * Serial interrupt handler
@@ -56,6 +62,7 @@ static inline int do_interrupt(DEV_USART *dev, int id)
 static const struct sigevent * ser_intr(void *area, int id)
 {
 	DEV_USART	*dev = area;
+
 	if (do_interrupt(dev, id) && (dev->tty.flags & EVENT_QUEUED) == 0) {
 		dev_lock(&ttyctrl);
 		ttyctrl.event_queue[ttyctrl.num_events++] = &dev->tty;
@@ -72,8 +79,8 @@ ser_attach_intr(DEV_USART *dev)
 {
 	uintptr_t	base = dev->base;
 
-	out32(base+PL011_IMSC, PL011_IMSC_CTSRM | PL011_IMSC_RXIM| PL011_IMSC_RTIM |
-			                      (1<<7) | (1<<8) | (1<<9) | PL011_IMSC_OEIM);
+	out32(base + PL011_IMSC, PL011_IMSC_RTIM | PL011_IMSC_RXIM);
+
 	dev->iid = InterruptAttach(dev->intr, ser_intr, dev, 0, 0);
 }
 
