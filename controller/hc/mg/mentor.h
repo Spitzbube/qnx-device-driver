@@ -1,0 +1,45 @@
+
+typedef struct _hctrl_t hctrl_t;
+
+#define HC_FLAG_USE_DMA           ( 1 << 0 )
+
+struct _hctrl_t {
+    usb_hcd_t* uhc; //0
+    pthread_mutex_t Data_4; //4
+    pthread_mutex_t Data_0xc; //12
+    int Data_0x14; //0x14
+    uint32_t Data_0x18; //0x18 = 24
+    int Data_0x1c; //0x1c
+    int fill_0x20[3]; //0x20
+    int Data_0x2c; //0x2c
+    int num_dma; //0x30
+    int dirq; //0x34
+    int fill_0x38[2]; //0x38
+    int Data_0x40; //0x40
+    int Data_0x44; //0x44
+    int edmairq; //0x48
+    int fill_0x4c[4]; //0x4c
+    pthread_t Data_0x5c; //0x5c = 92
+    int Data_0x60; //0x60
+    int Data_0x64; //0x64
+    int fill_0x68; //0x68
+    int Data_0x6c; //0x6c
+    int flags; //0x70
+    int fill_0x74; //0x74
+    int prio; //0x78 = 120
+    int fill_0x7c[4]; //0x7c
+    int Data_0x8c; //0x8c
+    int num_ed; //0x90
+    int num_td; //0x94
+    uint32_t verbosity; //152 = 0x98
+    int Data_0x9c; //0x9c
+    int Data_0xa0; //0xa0
+    char* fconfig_string; //0xa4
+    int fill_0xa8[19]; //0xa8
+    void* args_copy; //0xf4
+    int fill_0xf8[2]; //0xf8
+    int Data_0x100; //0x100
+    int fill_0x104; //0x104
+    //0x108
+};
+
