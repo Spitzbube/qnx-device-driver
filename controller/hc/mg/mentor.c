@@ -184,7 +184,84 @@ int MENTOR_AllocateTD(hctrl_t* hc)
 
 
 /* todo */
+int MENTOR_FreeTD(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
 int MENTOR_AllocateED(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int MENTOR_FreeED(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int MENTOR_BuildEDList(hctrl_t* hc, int* b)
+{
+
+}
+
+
+/* todo */
+int mentor_board_specific_init1(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int mentor_board_specific_shutdown1(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int mentor_board_specific_init2(hctrl_t* hc)
+{
+    
+}
+
+
+/* todo */
+int mentor_board_specific_shutdown2(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int mentor_edma_init(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int mentor_edma_shutdown(hctrl_t* hc)
+{
+
+}
+
+
+/* todo */
+int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
+{
+
+}
+
+
+/* todo */
+int mentor_destroy_error_pulse_thread(usb_hcd_t* uhcd)
 {
 
 }
@@ -312,8 +389,143 @@ error_763e:
         goto error_77f6;
     }
     //7660
+    res = MENTOR_BuildEDList(hc, &hc->Data_0xc8);
+    if (res != 0)
+    {
+        //->77f0
+        goto error_77f0;
+    }
+    //7672
+    res = MENTOR_BuildEDList(hc, &hc->Data_0xcc);
+    if (res != 0)
+    {
+        //->77f0
+        goto error_77f0;
+    }
+    //7684
+    res = MENTOR_BuildEDList(hc, &hc->Data_0xd4);
+    if (res != 0)
+    {
+        //->77f0
+        goto error_77f0;
+    }
+    //7696
+    res = MENTOR_BuildEDList(hc, &hc->Data_0xd0);
+    if (res != 0)
+    {
+        //->77f0
+        goto error_77f0;
+    }
+    //76a8
+    res = mentor_board_specific_init1(hc);
+    if (res != 0)
+    {
+        //76b2
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : %s - mentor_board_specific_init1 failed",
+            "devu-hcd-dm816x-mg.so", 
+            "mentor_controller_start");
+        //->77f0
+        goto error_77f0;
+    }
+    //76d6
+    if (hc->flags & (1 << 12))
+    {
+        //7726
+        res = mentor_edma_init(hc);
+        if (res != 0)
+        {
+            //->77f0
+            goto error_77f0;
+        }
+    }
+    //76dc
+    *((volatile uint8_t*)(hc->Data_0x14 + 0x0f)) = 0; //r6
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x60)) = 0; //r6
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x414)) = 0; //r6
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x404)) = 0x1008;
+
+    res = mentor_board_specific_init2(hc);
+    if (res != 0)
+    {
+        //7702
+        mentor_slogf(hc, 12, 2, 0/*r6*/, 
+            "%s : %s - mentor_board_specific_init2 failed",
+            "devu-hcd-dm816x-mg.so", 
+            "mentor_controller_start");
+        //->77de
+        goto error_77de;
+    }
+    //7734
+    int r6_ = hc->Data_0x1c;
+    hc->Data_0xd8 = calloc(r6_, 4);
+    if (hc->Data_0xd8 == NULL)
+    {
+        //7744
+        res = 12;
+
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : %s - calloc failed",
+            "devu-hcd-dm816x-mg.so", 
+            "mentor_controller_start");
+        //->77d8
+        goto error_77d8;
+    }
+    //776a
+    hc->Data_0xdc = calloc(r6_, 4);
+    if (hc->Data_0xdc == NULL)
+    {
+        //7778
+        res = 12;
+
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : %s - calloc failed",
+            "devu-hcd-dm816x-mg.so", 
+            "mentor_controller_start");
+        //->77d0
+        goto error_77d0;
+    }
+    //779e
+    res = mentor_create_error_pulse_thread(uhcd/*r7*/);
+    if (res != 0)
+    {
+        //->77c8
+        goto error_77c8;
+    }
+    //77a8
+    hc->flags |= (1 << 4);
+
+    *((volatile uint8_t*)(hc->Data_0x14 + 0x01)) = 0x60;
+
+    res = mentor_set_bus_state(uhcd/*r7*/, 0x05);
+    if (res == 0)
+    {
+        //->781e
+        goto success_781e;
+    }
+
+error_77c2:
+    mentor_destroy_error_pulse_thread(uhcd/*r7*/);
+
+error_77c8:
+    free(hc->Data_0xdc);
+
+error_77d0:
+    free(hc->Data_0xd8);
+
+error_77d8:
+    mentor_board_specific_shutdown2(hc);
+
+error_77de:
+    mentor_board_specific_shutdown1(hc);
     
-    return res;
+    if (hc->flags & (1 << 12))
+    {
+        mentor_edma_shutdown(hc);
+    }
+
+error_77f0:
+    MENTOR_FreeED(hc);
 
 error_77f6:
     MENTOR_FreeTD(hc);
@@ -330,6 +542,7 @@ error_7812:
 error_7818:
     pthread_mutex_destroy(&hc->Data_4/*sl*/);
 
+success_781e:
     return res;
 }
 
