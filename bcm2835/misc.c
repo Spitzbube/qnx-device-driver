@@ -54,6 +54,8 @@ bcm2835_draw_init(disp_adapter_t *adapter, char *opt)
 {
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_draw_init");
 
+    /* empty */
+
 	return 0;
 }
 
@@ -61,6 +63,8 @@ void
 bcm2835_draw_fini(disp_adapter_t *adapter)
 {
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_draw_fini");
+
+    /* empty */
 }
 
 /*
@@ -72,6 +76,9 @@ bcm2835_attach_external(disp_adapter_t *adapter, disp_aperture_t aper[])
 {
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_attach_external");
 
+    at91sam9xx_context_t		*at91sam9xx = adapter->shmem;
+	adapter->ms_ctx = at91sam9xx;
+
 	return 0;
 
 }
@@ -80,6 +87,8 @@ int
 bcm2835_detach_external(disp_adapter_t *adapter)
 {
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_detach_external");
+
+    /* empty */
 
     return 0;
 }
@@ -101,7 +110,11 @@ bcm2835_recover(disp_adapter_t *adapter)
 int
 bcm2835_misc_wait_idle(disp_adapter_t *adapter)
 {
+	at91sam9xx_context_t             *at91sam9xx = adapter->shmem;
+
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_misc_wait_idle");
+
+    /* empty */
 
     return 0;
 }

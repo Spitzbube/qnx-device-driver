@@ -57,6 +57,8 @@ int
 bcm2835_mem_init(disp_adapter_t *adapter, char *optstring)
 {
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_mem_init");
+
+	/* empty */
 	
     return 0;
 }
@@ -65,12 +67,34 @@ void
 bcm2835_mem_fini(disp_adapter_t *adapter)
 {
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_mem_fini");
+
+	/* empty */
 }
 
 int
 bcm2835_mem_reset(disp_adapter_t *adapter, disp_surface_t *surf)
 {
+	disp_surface_t			vram;
+	int			stride;
+
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_mem_reset");
+
+	register at91sam9xx_context_t	*at91sam9xx = adapter->ms_ctx;
+
+	vram.stride = vram.width = at91sam9xx->vidsize;//- 1024;
+	vram.height = 1;
+	vram.pixel_format = DISP_SURFACE_FORMAT_BYTES;
+	vram.vidptr = at91sam9xx->vidptr;
+	vram.paddr = at91sam9xx->vidbase;
+	vram.offset = 0;
+	vram.flags = DISP_SURFACE_DISPLAYABLE | DISP_SURFACE_SCALER_DISPLAYABLE |
+	    DISP_SURFACE_CPU_LINEAR_READABLE |
+	    DISP_SURFACE_CPU_LINEAR_WRITEABLE |
+	    DISP_SURFACE_2D_TARGETABLE | DISP_SURFACE_2D_READABLE |
+	    DISP_SURFACE_PHYS_CONTIG;
+	stride=at91sam9xx->width*at91sam9xx->height*3;
+	adapter->mm_ctx = disp_getmem(stride, PROT_READ|PROT_WRITE,
+			vram.flags);
 
 	return 0;
 }
@@ -79,15 +103,46 @@ disp_surface_t *
 bcm2835_alloc_surface(disp_adapter_t *adapter,
     int width, int height, unsigned format, unsigned flags, unsigned user_flags)
 {	
+	at91sam9xx_context_t		*vb = adapter->ms_ctx;
+	int			stride;
+	disp_surface_t		*surf;
+	unsigned		mapflags = 0;
+
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_alloc_surface");
 
-    return 0;
+	if (adapter->mm_ctx == NULL)
+		return NULL;
+	if(format == DISP_SURFACE_FORMAT_RGB565)
+		stride = (width*DISP_BYTES_PER_PIXEL(format) + 31) & ~31; //varghese 31
+    else
+    	stride = (width*DISP_BYTES_PER_PIXEL(format) + 31) & ~31;
+	if ((surf = calloc(1, sizeof (*surf))) == NULL)
+			return NULL;
+	if (flags & DISP_SURFACE_PHYS_CONTIG)
+			mapflags |= DISP_MAP_PHYS;
+
+	surf->size = sizeof(*surf);
+	surf->stride = stride;
+	surf->width = width;
+	surf->height = height;
+	surf->flags = flags |DISP_SURFACE_CPU_LINEAR_WRITEABLE|DISP_SURFACE_CPU_LINEAR_READABLE;
+	surf->pixel_format = format;
+	surf->vidptr =adapter->mm_ctx;
+
+	surf->paddr = disp_phys_addr(adapter->mm_ctx);
+	if(surf->paddr==NULL)
+		slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "at91sam9xx_free_surface");
+
+	return surf;
 }
 
 int
 bcm2835_free_surface(disp_adapter_t *adapter, disp_surface_t *surf)
 {	
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_free_surface");
+
+	//disp_vm_free_surface(adapter, surf);
+	disp_freemem(surf->paddr,surf->stride );
 
 	return 0;
 }
@@ -105,6 +160,13 @@ bcm2835_query_apertures(disp_adapter_t *adp, disp_aperture_t *ap)
 {	
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_query_apertures");
 
+    at91sam9xx_context_t	*at91sam9xx = adp->ms_ctx;
+  
+    ap->base = at91sam9xx->vidbase;
+	ap->size = at91sam9xx->vidsize;
+	
+	ap->flags = DISP_APER_NOCACHE;
+
     return 1;
 }
 
@@ -117,6 +179,9 @@ bcm2835_query_surface(disp_adapter_t *adp,
     disp_surface_t *surf, disp_surface_info_t *info)
 {       
 	slogf(_SLOGC_GRAPHICS, _SLOG_INFO, "bcm2835_query_surface");
+
+	info->aperture_index = 0;
+	info->offset = surf->offset;
 
     return 0;
 }
