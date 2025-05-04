@@ -1,0 +1,2 @@
+*.o
+seromap/arm/le.v7/Makefile
