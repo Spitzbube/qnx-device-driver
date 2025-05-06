@@ -2312,7 +2312,12 @@
 
 
 
+/*2315*//*<1691>*/int ehci_data_transfer(/*<3662>*/st_EHCI_Hc* EHc, /*<26d7>*/iousb_transfer_t* urb, /*<2327>*/iousb_endpoint_t* iousbep, 
+    /*<2307>*/uint8_t* buffer, /*<1b7c>*/uint32_t length, /*<1b7c>*/uint32_t flags)
+{
+    /*2318*//*<1eae>*/usbd_urb_sg_elem_t sg_elem;
 
+}
 
 
 

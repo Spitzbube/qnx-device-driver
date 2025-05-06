@@ -207,9 +207,9 @@
 
 
 
-
-
-
+/*210*//*<2c20>*/ typedef struct _st_EHCI_TRANSFER_DESCRIPTOR st_EHCI_TRANSFER_DESCRIPTOR;
+/*211*//*<2c67>*/ typedef struct _st_EHCI_I_TRANSFER_DESCRIPTOR st_EHCI_I_TRANSFER_DESCRIPTOR;
+/*212*//*<2ca2>*/ typedef struct _st_EHCI_SI_TRANSFER_DESCRIPTOR st_EHCI_SI_TRANSFER_DESCRIPTOR;
 /*213*//*<2d01>*/ typedef struct _st_EHCI_QUEUE_DESCRIPTOR st_EHCI_QUEUE_DESCRIPTOR;
 
 
@@ -220,6 +220,24 @@
 
 
 
+/*223*//*<2c2b>*/ struct _st_EHCI_TRANSFER_DESCRIPTOR {
+    //TODO!!!
+}; //size: 48
+
+
+
+
+
+/*231*//*<2c72>*/ struct _st_EHCI_I_TRANSFER_DESCRIPTOR {
+    //TODO!!!
+}; //size: 88
+
+
+
+
+/*238*//*<2cad>*/ struct _st_EHCI_SI_TRANSFER_DESCRIPTOR {
+    //TODO!!!
+}; //size: 32
 
 
 
@@ -235,45 +253,27 @@
 
 
 
+/*256*//*<2ea3>*/ struct _ehci_transfer {
+    /*<1b7c>*/uint32_t LinkPointer; //0
+    /*<2e76>*/union {
+        /*259*//*<2c20>*/st_EHCI_TRANSFER_DESCRIPTOR TD;
+        /*260*//*<2c67>*/st_EHCI_I_TRANSFER_DESCRIPTOR iTD; 
+        /*261*//*<2ca2>*/st_EHCI_SI_TRANSFER_DESCRIPTOR siTD;
+    } Data_4; //4 +88
+    /*263*//*<1b7c>*/uint32_t Status; //92
+    /*264*//*<1b7c>*/uint32_t transfer_len; //96
+    /*265*//*<2f39>*/struct _ehci_transfer* VirtualNextTD; //100
+    /*266*//*<2f39>*/struct _ehci_transfer* VirtualPrevTD; //104
+    /*267*//*<2f39>*/struct _ehci_transfer* VirtualNextTDList; //108
+    /*268*//*<2f39>*/struct _ehci_transfer* VirtualNextIsochTD; //112
+    /*269*//*<1b49>*/paddr_t paddr; //116
+    /*270*/iousb_transfer_t* urb; //120
+    /*271*//*<1b7c>*/uint32_t transfer_data; //124
+}; //size: 128
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/*276*//*<2f3f>*/ typedef struct _ehci_transfer ehci_transfer_descriptor_t; 
 
 
 
