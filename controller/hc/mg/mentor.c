@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <atomic.h>
 #include <sys/mman.h>
 #include <sys/slog.h>
 #include "pci.h"
@@ -11,6 +13,7 @@
 
 
 /*static*/ iousb_self_t mentor_iousb_self;
+/*static*/int dma_nums;
 
 static int mentor_init(void*, dispatch_t*, iousb_self_t*, char*);
 static int mentor_shutdown(void*);
@@ -177,6 +180,20 @@ static void* mentor_interrupt_thread(void* p)
 
 
 /* todo */
+static void* mentor_error_pulse_handler(void* p)
+{
+
+}
+
+
+/* todo */
+int mentor_fifo_init(hctrl_t* hc, char* b)
+{
+
+}
+
+
+/* todo */
 int MENTOR_AllocateTD(hctrl_t* hc)
 {
 
@@ -212,9 +229,255 @@ int MENTOR_BuildEDList(hctrl_t* hc, int* b)
 
 
 /* todo */
-int mentor_board_specific_init1(hctrl_t* hc)
+const struct sigevent* dma_interrupt_handler(void *__area, int __id)
 {
 
+}
+
+
+/* todo */
+int mentor_handle_extra_complete()
+{
+
+}
+
+
+
+/* todo */
+int mentor_handle_device_connected()
+{
+
+}
+
+
+struct hc_0xfc
+{
+    int Data_0; //0
+    int Data_4; //4
+    int fill_8; //8
+    char bData_0xc; //12
+    int fill_0x10[3]; //0x10
+    int Data_0x1c; //0x1c
+    int Data_0x20; //0x20
+    //44 = 0x2c???
+};
+
+
+static int create_bds(hctrl_t* hc)
+{
+    //32be
+    struct hc_0xfc* sl = hc->Data_0xfc;
+
+    //TODO
+}
+
+
+static int dma_init(hctrl_t* hc)
+{
+    struct hc_0xfc* r8 = hc->Data_0xfc;
+    int r7;
+
+    mentor_slogf(hc, 12, 2, 3, 
+        "devu-dm816x-mg.so: init dma CDMA_REVID=%x USBSS_REVREG=%x",
+        *((volatile uint32_t*)(r8->Data_4 + 0x2000)),
+        *((volatile uint32_t*)(r8->Data_4 + 0)));
+
+    r8->Data_0x20 = InterruptAttach(r8->Data_0x1c, 
+        dma_interrupt_handler,hc, 0x108, 0x08);
+    if (r8->Data_0x20 == -1)
+    {
+        //3284
+        r7 = errno;
+
+        mentor_slogf(hc, 12, 2, 0, 
+            "devu-dm816x-mg.so: %s - failed to attached dma intr",
+            "dma_init");
+        
+        return r7;
+    }
+    else
+    {
+        //32ac
+        if (dma_nums/*r9*/ == 0)
+        {
+            //32be
+            create_bds(hc);
+
+        }
+        //3514
+
+        //TODO!!!
+
+        //3554
+        int r2 = r8->Data_4;
+
+        //TODO!!!
+
+        //35da
+        if (r8->bData_0xc == 0)
+        {
+            //35e0
+            *((volatile uint32_t*)(r2 + 0x2c)) = 0x305;
+            *((volatile uint32_t*)(r2 + 0x140)) = 0xfffefffe;
+        }
+        //35f0
+        else if (r8->bData_0xc == 1)
+        {
+            *((volatile uint32_t*)(r2 + 0x2c)) = 0xc05;
+            *((volatile uint32_t*)(r2 + 0x144)) = 0xfffefffe;
+        }
+        //3602
+        dma_nums++;
+    }
+    //->363a
+    return 0;
+}
+
+
+
+/* todo */
+int mentor_board_specific_init1(hctrl_t* hc/*r4*/)
+{
+    int r7;
+    struct hc_0xfc* r5;
+
+    usb_hcd_t* sp20 = hc->uhc;
+
+    hc->Data_0x40 = 0x400;
+    hc->Data_0x1c = 16;
+    hc->Data_0x100 = mentor_handle_extra_complete;
+    hc->Data_0x104 = mentor_handle_device_connected;
+
+    atomic_toggle(&hc->flags, (1 << 9));
+    //TODO!!!
+
+    //30d0
+    hc->Data_0xfc = r5 = calloc(1, 44);
+    if (hc->Data_0xfc == NULL)
+    {
+        //30e2
+        mentor_slogf(hc, 12, 2, 0, 
+            "devu-dm816x-mg.so : %s - failed to create dm816x context",
+            "mentor_board_specific_init1");
+
+        return 12;
+    }
+    //30fe
+
+    //TODO!!!
+
+    //3178
+    r5->Data_4 = mmap_device_memory(NULL, 
+        0x8000, 0xb00, 0x10001, 0x47400000);
+    if (r5->Data_4 == 0)
+    {
+        //3198
+        r7 = 12;
+
+        mentor_slogf(hc, 12, 2, 0, 
+            "devu-dm816x-mg.so : %s - couldn't map dm816x-sepecific registers",
+            "mentor_board_specific_init1");
+        //->loc_3632
+        goto error_3632;
+
+    }
+    //31b4
+    //int r8_ = sp20->hw_ctrl.pci_inf->CpuBaseAddress[0];
+    //int r9_ = sp20->hw_ctrl.pci_inf->CpuBaseAddress[1];
+
+    r5->Data_0 = r5->Data_4 + /*r8_*/sp20->hw_ctrl.pci_inf->CpuBaseAddress[0] + 0xB8BFFC00;
+
+    if (sp20->hw_ctrl.pci_inf->CpuBaseAddress[0] == 0x47401c00)
+    {
+        r5->bData_0xc = 1;
+    }
+    else
+    {
+        r5->bData_0xc = 0;
+    }
+
+    *((volatile uint32_t*)(r5->Data_0 + 0x14)) = 1;
+
+    while (*((volatile uint32_t*)(r5->Data_0 + 0x14)) & 1)
+    {
+        //31e8
+        delay(1);
+    }
+    //31fa
+    *((volatile uint32_t*)(r5->Data_0 + 0xe8)) = 0;
+    *((volatile uint32_t*)(r5->Data_0 + 0xe0)) = 2;
+    *((volatile uint32_t*)(r5->Data_0 + 0x70)) = 0;
+    *((volatile uint32_t*)(r5->Data_0 + 0x74)) = 0;
+    *((volatile uint32_t*)(r5->Data_0 + 0x14)) &= ~(1 << 4);
+    *((volatile uint32_t*)(r5->Data_0 + 0xd0)) = 0;
+
+    if (hc->fconfig_string == NULL)
+    {
+        //321a
+        hc->fconfig_string = strdup("16:8;4:16;8:64;2:128;30:512");
+    }
+    //3226
+    mentor_fifo_init(hc, hc->fconfig_string);
+
+    if (hc->flags & (1 << 0))
+    {
+        //3238
+        r5->Data_0x1c = 0x11;
+
+#if 0
+        r8 = hc->Data_0xfc;
+
+        mentor_slogf(hc, 12, 2, 3, 
+            "devu-dm816x-mg.so: init dma CDMA_REVID=%x USBSS_REVREG=%x",
+            *((volatile uint32_t*)(r8->Data_4 + 0x2000)),
+            *((volatile uint32_t*)(r8->Data_4 + 0)));
+
+        r8->Data_0x20 = InterruptAttach(r8->Data_0x1c, dma_interrupt_handler,
+            hc, 0x108, 0x08);
+        if (r8->Data_0x20 == -1)
+        {
+            //3284
+            r7 = errno;
+
+            mentor_slogf(hc, 12, 2, 0, 
+                "devu-dm816x-mg.so: %s - failed to attached dma intr",
+                "dma_init");
+            if (r7 != 0)
+            {
+                //->3610
+                goto error_3610;
+            }
+            //->360c
+            //TODO!!!
+        }
+        else
+        {
+            //32ac
+            //TODO!!!
+        }
+#else
+        r7 = dma_init(hc);
+        if (r7 != 0)
+        {
+            //->3610
+            goto error_3610;
+        }
+#endif
+    }
+    //360c
+    return 0;
+
+error_3610:
+    mentor_slogf(hc, 12, 2, 0, 
+        "devu-dm816x-mg.so : %s - couldn't init the dma... restart the driver with nodma option",
+        "mentor_board_specific_init1");
+
+    munmap_device_memory(r5->Data_4, 0x8000);
+
+error_3632:
+    free(r5);
+
+    return r7;
 }
 
 
@@ -254,16 +517,157 @@ int mentor_edma_shutdown(hctrl_t* hc)
 
 
 /* todo */
+static int mentor_create_completion_thread(usb_hcd_t* uhcd)
+{
+    hctrl_t* r6 = uhcd->hc_data;
+    pthread_attr_t sp_0x60;
+    struct sched_param sp_0x176;
+
+    int r5;
+    r6->Data_0x60 = ChannelCreate(_NTO_CHF_DISCONNECT);
+    if (r6->Data_0x60 < 0)
+    {
+        //7570
+        mentor_slogf(r6, 12, 2, 0/*r5*/, 
+            "%s : %s - Unable to create channel",
+            "devu-hcd-dm816x-mg.so", 
+            "mentor_create_completion_thread");
+        r5 = r6->Data_0x60;
+        //->763e
+        goto error_763e;
+    }
+    //7596
+    r6->Data_0x64 = ConnectAttach(0, 0, r6->Data_0x60, 
+        0x40000000, 0);
+    if (r6->Data_0x64 < 0)
+    {
+        //75aa
+        mentor_slogf(r6, 12, 2, 0/*r5*/, 
+            "%s : %s - Unable to connect to channel",
+            "devu-hcd-dm816x-mg.so", 
+            "mentor_create_completion_thread");
+        r5 = r6->Data_0x64;
+        //->7638:
+        goto error_7638;
+    }
+    //75d0
+    pthread_attr_init(&sp_0x60/*r5*/);
+    pthread_attr_setschedpolicy(&sp_0x60/*r5*/, 2);
+    sp_0x176.sched_priority = r6->prio;
+    pthread_attr_setschedparam(&sp_0x60/*r5*/, &sp_0x176);
+    pthread_attr_setinheritsched(&sp_0x60/*r5*/, 2);
+
+    r5 = pthread_create(&r6->Data_0x5c, &sp_0x60/*r5*/, 
+        mentor_interrupt_thread, uhcd/*r7*/);
+    if (r5 == 0)
+    {
+        //->7644
+        goto success_7644;
+    }
+    //7610
+    mentor_slogf(r6, 12, 2, 0/*r8*/, 
+        "%s : %s - Unable to create interrupt thread",
+        "devu-hcd-dm816x-mg.so", 
+        "mentor_create_completion_thread");
+
+    ConnectDetach(r6->Data_0x64);
+error_7638:
+    ChannelDestroy(r6->Data_0x60);
+
+error_763e:
+success_7644:
+    return r5;
+}
+
+
+/* todo */
 int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
 {
+    hctrl_t* hc/*r4*/ = uhcd->hc_data;
+    pthread_attr_t sp_0x30;
+    struct sched_param sp_0x80;
+    int res;
 
+    hc->Data_0x50 = ChannelCreate(_NTO_CHF_DISCONNECT);
+    if (hc->Data_0x50 < 0)
+    {
+        //7396
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : Unable to create channel",
+            "mentor_create_error_pulse_thread");
+
+        res = hc->Data_0x50;
+        goto error_7468;
+    }
+    //73b6
+    hc->Data_0x54 = ConnectAttach(0, 0, hc->Data_0x50, 
+        0x40000000, 0);
+    if (hc->Data_0x54 < 0)
+    {
+        //73cc
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : Unable to connect to channel",
+            "mentor_create_error_pulse_thread");
+
+        res = hc->Data_0x54;
+        goto error_7460;
+    }
+    //73ec
+    if (hc->Data_0x58 == 0)
+    {
+        hc->Data_0x58 = hc->prio;
+    }
+    //73f4
+    pthread_attr_init(&sp_0x30/*r6*/);
+    pthread_attr_setschedpolicy(&sp_0x30/*r6*/, 2);
+    sp_0x80.sched_priority = hc->Data_0x58;
+    pthread_attr_setschedparam(&sp_0x30/*r6*/, &sp_0x80);
+    pthread_attr_setinheritsched(&sp_0x30/*r6*/, 2);
+    //741a
+    res = pthread_create(&hc->Data_0x4c, &sp_0x30/*r6*/, 
+        mentor_error_pulse_handler, hc/*r4*/);
+    if (res != 0)
+    {
+        //742e
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : Unable to create interrupt thread",
+            "mentor_create_error_pulse_thread");
+
+        pthread_attr_destroy(&sp_0x30/*r6*/);
+        ConnectDetach(hc->Data_0x54);
+        //->7460
+        goto error_7460;
+    }
+    //7458
+    pthread_attr_destroy(&sp_0x30/*r6*/);
+
+    return 0;
+
+error_7460:
+    ChannelDestroy(hc->Data_0x50);
+
+error_7468:
+    return res;
 }
 
 
 /* todo */
 int mentor_destroy_error_pulse_thread(usb_hcd_t* uhcd)
 {
+    hctrl_t* hc = uhcd->hc_data;
 
+    if (-1 == MsgSendPulse(hc->Data_0x54, hc->Data_0x58, 2, 0))
+    {
+        //72ac
+        mentor_slogf(hc, 12, 2, 0, 
+            "%s : MsgSendPulse error %s",
+            "mentor_destroy_error_pulse_thread",
+            strerror(errno));
+    }
+
+    pthread_join(hc->Data_0x4c, 0);
+    ConnectDetach(hc->Data_0x54);
+    ChannelDestroy(hc->Data_0x50);
 }
 
 
@@ -315,6 +719,9 @@ static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     //755a
     hc->Data_0x18 = (uint32_t) uhcd->hw_ctrl.pci_inf->CpuBaseAddress[0];
 
+#if 1
+    res = mentor_create_completion_thread(uhcd);
+#else
     hctrl_t* r6 = uhcd->hc_data;
     pthread_attr_t sp_0x60;
     struct sched_param sp_0x176;
@@ -368,6 +775,7 @@ error_7638:
 error_763e:
             ;
     }
+#endif
     //763e
     if (res != 0)
     {
@@ -547,9 +955,36 @@ success_781e:
 }
 
 
+/* complete */
 static int mentor_controller_stop(usb_hcd_t* uhcd)
 {
+    hctrl_t* hc = uhcd->hc_data;
 
+    mentor_set_bus_state(uhcd, USB_BUS_STATE_STOP);
+
+    *((volatile uint8_t*)(hc->Data_0x14 + 0x60)) = 0x00;
+    *((volatile uint8_t*)(hc->Data_0x14 + 0x01)) = 0x00;
+
+    mentor_board_specific_shutdown2(hc);
+    mentor_board_specific_shutdown1(hc);
+
+    if (hc->flags & (1 << 12))
+    {
+        mentor_edma_shutdown(hc);
+    }
+
+    mentor_destroy_error_pulse_thread(uhcd);
+    InterruptDetach(hc->Data_0x6c);
+    mentor_destroy_completion_thread(uhcd->hc_data);
+    pthread_mutex_destroy(&hc->Data_4);
+    pthread_mutex_destroy(&hc->Data_0xc);
+    munmap_device_memory(hc->Data_0x14, 0x2000);
+    free(hc->Data_0xc0);
+    free(hc->Data_0xbc);
+    free(hc->Data_0xd8);
+    free(hc->Data_0xdc);
+
+    return 0;
 }
 
 
@@ -569,9 +1004,30 @@ static int mentor_controller_shutdown(usb_hcd_t* uhcd)
 }
 
 
+/* todo */
 static int mentor_set_bus_state(usb_hcd_t* uhcd, uint32_t bus_state)
 {
+    hctrl_t* hc = uhcd->hc_data;
 
+    mentor_slogf(hc, 12, 2, 3, 
+        "%s(%d): bus_state=%x",
+        "mentor_set_bus_state", 2732, bus_state);
+
+    switch (bus_state)
+    {
+        case USB_BUS_STATE_START: //5:
+            //4f2c
+            *((volatile uint8_t*)(hc->Data_0x14 + 0x60)) |= (1 << 0);
+            break;
+
+        case USB_BUS_STATE_STOP: //6:
+            //4f16
+            *((volatile uint8_t*)(hc->Data_0x14 + 0x60)) &= ~(1 << 0);
+            delay(5);
+            break;
+    }
+
+    return 0;
 }
 
 
@@ -4052,7 +4508,7 @@ static int mentor_controller_init(
     hc->verbosity = 0; //r3
     hc->flags = (1 << 6) | (1 << 2) | HC_FLAG_USE_DMA; //0x45;
     hc->num_td = 256;
-    hc->Data_0x100 = 0; //r3
+    hc->Data_0x100 = NULL; //r3
     hc->Data_0x8c = 4;
     hc->Data_0x1c = 4;
     hc->Data_0x9c = 61440000; //r9
@@ -4081,5 +4537,153 @@ static int mentor_controller_init(
 
     return 0;
 }
+
+
+int MENTOR_StartControlEtd(hctrl_t* a, int b)
+{
+    
+}
+
+
+static int mentor_ctrl_transfer(void* chdl, 
+    iousb_transfer_t* urb/*sl*/, 
+    iousb_endpoint_t* iousbep, 
+    uint8_t* buffer/*fp*/, 
+    uint32_t length/*sp48*/, 
+    uint32_t flags/*sp52*/)
+{
+    hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
+    struct
+    {
+        int fill_0[2]; //0
+        int Data_8; //8
+        struct
+        {
+            int Data_0; //0
+            //???
+        }* Data_0xc; //12
+        int Data_0x10; //16 = 0x10
+        int fill_0x14[5]; //20 = 0x14
+        int Data_0x28; //0x28
+        //???
+    }* r6 = iousbep->user;
+    struct
+    {
+        int Data_0; //0
+        int fill_4[2]; //4
+        int Data_0xc; //12 = 0xc
+        int fill_0x10[7]; //16 = 0x10
+        int Data_0x2c; //0x2c
+        //???
+    }* r7;
+
+    if (0 != pthread_mutex_lock(&hc->Data_0xc/*r8*/))
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x517);
+    }
+    //4ce8
+    if (0 != pthread_mutex_lock(&hc->Data_4/*r9*/))
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x518);
+    }
+    //4d0c
+    if ((hc->Data_0x8c & 0x06) != 0x06)
+    {
+        //4d18
+        if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
+        {
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x51b);
+        }
+        //4d38
+        if (0 != pthread_mutex_unlock(&hc->Data_0xc/*r8*/))
+        {
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x51c);
+        }
+        //4d58
+        urb->status = 0x2000005;
+
+        return 0x13;
+    }
+    //4d62
+    r7 = MENTOR_TD_Setup(hc, urb, r6, flags);
+    if (r7 == NULL)
+    {
+        //4d72
+        if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
+        {
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x522);
+        }
+        //4d92
+        if (0 != pthread_mutex_unlock(&hc->Data_0xc/*r8*/))
+        {
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x523);
+        }
+        //4db2
+        urb->status = 0x2000010;
+
+        return 0x0c;
+    }
+    //4dbc
+    r7->Data_0xc = buffer;
+    r7->Data_0 = length;
+
+    InterruptLock(&hc->Data_0xe4/*sl*/);
+
+    r7->Data_0x2c = 0;
+    r6->Data_0xc->Data_0 = r7;
+    r6->Data_0xc = &r7->Data_0x2c;
+
+    if ((r6->Data_0x10 & 1) == 0)
+    {
+        //4de4
+        r6->Data_0x10 |= 1;
+        r6->Data_0x28 = 0;
+
+        hc->Data_0xd8[0] = r7;
+
+        InterruptUnlock(&hc->Data_0xe4/*sl*/);
+
+        MENTOR_StartControlEtd(hc, r6->Data_8);
+        //->4e08
+    }
+    else
+    {
+        //4e02
+        InterruptUnlock(&hc->Data_0xe4/*sl*/);
+    }
+    //4e08
+    if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x538);
+    }
+    //4e28
+    if (0 != pthread_mutex_unlock(&hc->Data_0xc/*r8*/))
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x53a);
+    }
+    //4e4a
+    return 0;
+}
+
+
+
+
+
 
 
