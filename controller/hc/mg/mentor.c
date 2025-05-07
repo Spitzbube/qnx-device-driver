@@ -193,17 +193,38 @@ int mentor_fifo_init(hctrl_t* hc, char* b)
 }
 
 
-/* todo */
+/* complete */
 int MENTOR_AllocateTD(hctrl_t* hc)
 {
+    uint32_t i;
+    struct _musb_transfer* td;
 
+    SIMPLEQ_INIT( &hc->transfer_free_q );
+    SIMPLEQ_INIT( &hc->transfer_complete_q );
+
+    td = calloc(1, sizeof(struct _musb_transfer) * (hc->num_td + 1));
+    if (td == NULL)
+    {
+        return 12;
+    }
+
+    hc->transfer_mem = td;
+
+    memset(td, 0, (hc->num_td + 1) * sizeof(struct _musb_transfer));
+
+    for (i = 0; i < hc->num_td; i++, td++)
+    {
+        SIMPLEQ_INSERT_TAIL( &hc->transfer_free_q, td, link );
+    }
+
+    return 0;
 }
 
 
-/* todo */
-int MENTOR_FreeTD(hctrl_t* hc)
+/* complete */
+void MENTOR_FreeTD(hctrl_t* hc)
 {
-
+    free(hc->transfer_mem);
 }
 
 
@@ -277,7 +298,7 @@ static int dma_init(hctrl_t* hc)
     struct hc_0xfc* r8 = hc->Data_0xfc;
     int r7;
 
-    mentor_slogf(hc, 12, 2, 3, 
+    mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
         "devu-dm816x-mg.so: init dma CDMA_REVID=%x USBSS_REVREG=%x",
         *((volatile uint32_t*)(r8->Data_4 + 0x2000)),
         *((volatile uint32_t*)(r8->Data_4 + 0)));
@@ -289,7 +310,7 @@ static int dma_init(hctrl_t* hc)
         //3284
         r7 = errno;
 
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "devu-dm816x-mg.so: %s - failed to attached dma intr",
             "dma_init");
         
@@ -356,7 +377,7 @@ int mentor_board_specific_init1(hctrl_t* hc/*r4*/)
     if (hc->Data_0xfc == NULL)
     {
         //30e2
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "devu-dm816x-mg.so : %s - failed to create dm816x context",
             "mentor_board_specific_init1");
 
@@ -374,7 +395,7 @@ int mentor_board_specific_init1(hctrl_t* hc/*r4*/)
         //3198
         r7 = 12;
 
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "devu-dm816x-mg.so : %s - couldn't map dm816x-sepecific registers",
             "mentor_board_specific_init1");
         //->loc_3632
@@ -427,7 +448,7 @@ int mentor_board_specific_init1(hctrl_t* hc/*r4*/)
 #if 0
         r8 = hc->Data_0xfc;
 
-        mentor_slogf(hc, 12, 2, 3, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
             "devu-dm816x-mg.so: init dma CDMA_REVID=%x USBSS_REVREG=%x",
             *((volatile uint32_t*)(r8->Data_4 + 0x2000)),
             *((volatile uint32_t*)(r8->Data_4 + 0)));
@@ -439,7 +460,7 @@ int mentor_board_specific_init1(hctrl_t* hc/*r4*/)
             //3284
             r7 = errno;
 
-            mentor_slogf(hc, 12, 2, 0, 
+            mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
                 "devu-dm816x-mg.so: %s - failed to attached dma intr",
                 "dma_init");
             if (r7 != 0)
@@ -468,7 +489,7 @@ int mentor_board_specific_init1(hctrl_t* hc/*r4*/)
     return 0;
 
 error_3610:
-    mentor_slogf(hc, 12, 2, 0, 
+    mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
         "devu-dm816x-mg.so : %s - couldn't init the dma... restart the driver with nodma option",
         "mentor_board_specific_init1");
 
@@ -528,7 +549,7 @@ static int mentor_create_completion_thread(usb_hcd_t* uhcd)
     if (r6->Data_0x60 < 0)
     {
         //7570
-        mentor_slogf(r6, 12, 2, 0/*r5*/, 
+        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r5*/, 
             "%s : %s - Unable to create channel",
             "devu-hcd-dm816x-mg.so", 
             "mentor_create_completion_thread");
@@ -542,7 +563,7 @@ static int mentor_create_completion_thread(usb_hcd_t* uhcd)
     if (r6->Data_0x64 < 0)
     {
         //75aa
-        mentor_slogf(r6, 12, 2, 0/*r5*/, 
+        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r5*/, 
             "%s : %s - Unable to connect to channel",
             "devu-hcd-dm816x-mg.so", 
             "mentor_create_completion_thread");
@@ -565,7 +586,7 @@ static int mentor_create_completion_thread(usb_hcd_t* uhcd)
         goto success_7644;
     }
     //7610
-    mentor_slogf(r6, 12, 2, 0/*r8*/, 
+    mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r8*/, 
         "%s : %s - Unable to create interrupt thread",
         "devu-hcd-dm816x-mg.so", 
         "mentor_create_completion_thread");
@@ -592,7 +613,7 @@ int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
     if (hc->Data_0x50 < 0)
     {
         //7396
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : Unable to create channel",
             "mentor_create_error_pulse_thread");
 
@@ -605,7 +626,7 @@ int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
     if (hc->Data_0x54 < 0)
     {
         //73cc
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : Unable to connect to channel",
             "mentor_create_error_pulse_thread");
 
@@ -629,7 +650,7 @@ int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
     if (res != 0)
     {
         //742e
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : Unable to create interrupt thread",
             "mentor_create_error_pulse_thread");
 
@@ -659,7 +680,7 @@ int mentor_destroy_error_pulse_thread(usb_hcd_t* uhcd)
     if (-1 == MsgSendPulse(hc->Data_0x54, hc->Data_0x58, 2, 0))
     {
         //72ac
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : MsgSendPulse error %s",
             "mentor_destroy_error_pulse_thread",
             strerror(errno));
@@ -685,7 +706,7 @@ static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     if (res != 0)
     {
         //74d8
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : %s - Unable to initialize mutex",
             "devu-hcd-dm816x-mg.so", 
             "mentor_controller_start");
@@ -697,7 +718,7 @@ static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     if (res != 0)
     {
         //750e
-        mentor_slogf(hc, 12, 2, 0/*r8*/, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0/*r8*/, 
             "%s : %s - Unable to initialize mutex",
             "devu-hcd-dm816x-mg.so", 
             "mentor_controller_start");
@@ -731,7 +752,7 @@ static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     if (r6->Data_0x60 < 0)
     {
         //7570
-        mentor_slogf(r6, 12, 2, 0/*r5*/, 
+        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r5*/, 
             "%s : %s - Unable to create channel",
             "devu-hcd-dm816x-mg.so", 
             "mentor_create_completion_thread");
@@ -744,7 +765,7 @@ static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     if (r6->Data_0x64 < 0)
     {
         //75aa
-        mentor_slogf(r6, 12, 2, 0/*r5*/, 
+        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r5*/, 
             "%s : %s - Unable to connect to channel",
             "devu-hcd-dm816x-mg.so", 
             "mentor_create_completion_thread");
@@ -764,7 +785,7 @@ static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     if (r5 != 0)
     {
         //7610
-        mentor_slogf(r6, 12, 2, 0/*r8*/, 
+        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r8*/, 
             "%s : %s - Unable to create interrupt thread",
             "devu-hcd-dm816x-mg.so", 
             "mentor_create_completion_thread");
@@ -829,7 +850,7 @@ error_763e:
     if (res != 0)
     {
         //76b2
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : %s - mentor_board_specific_init1 failed",
             "devu-hcd-dm816x-mg.so", 
             "mentor_controller_start");
@@ -857,7 +878,7 @@ error_763e:
     if (res != 0)
     {
         //7702
-        mentor_slogf(hc, 12, 2, 0/*r6*/, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0/*r6*/, 
             "%s : %s - mentor_board_specific_init2 failed",
             "devu-hcd-dm816x-mg.so", 
             "mentor_controller_start");
@@ -872,7 +893,7 @@ error_763e:
         //7744
         res = 12;
 
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : %s - calloc failed",
             "devu-hcd-dm816x-mg.so", 
             "mentor_controller_start");
@@ -886,7 +907,7 @@ error_763e:
         //7778
         res = 12;
 
-        mentor_slogf(hc, 12, 2, 0, 
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
             "%s : %s - calloc failed",
             "devu-hcd-dm816x-mg.so", 
             "mentor_controller_start");
@@ -980,7 +1001,7 @@ static int mentor_controller_stop(usb_hcd_t* uhcd)
     pthread_mutex_destroy(&hc->Data_0xc);
     munmap_device_memory(hc->Data_0x14, 0x2000);
     free(hc->Data_0xc0);
-    free(hc->Data_0xbc);
+    free(hc->transfer_mem);
     free(hc->Data_0xd8);
     free(hc->Data_0xdc);
 
@@ -1009,7 +1030,7 @@ static int mentor_set_bus_state(usb_hcd_t* uhcd, uint32_t bus_state)
 {
     hctrl_t* hc = uhcd->hc_data;
 
-    mentor_slogf(hc, 12, 2, 3, 
+    mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
         "%s(%d): bus_state=%x",
         "mentor_set_bus_state", 2732, bus_state);
 
@@ -4481,8 +4502,7 @@ static void process_args(hctrl_t* hc, char* args)
 
 
 /* todo */
-static int mentor_controller_init(
-    usb_hcd_t* uhcd/*r5*/, 
+static int mentor_controller_init(usb_hcd_t* uhcd/*r5*/, 
     uint32_t flags, 
     char *args/*r7*/)
 {
@@ -4539,12 +4559,52 @@ static int mentor_controller_init(
 }
 
 
+/* complete */
+struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc, 
+    iousb_transfer_t* urb, 
+    struct Struct_0xa4* c, 
+    uint32_t flags)
+{
+    struct _musb_transfer* td;
+
+    InterruptLock(&hc->Data_0xe4);
+
+    td = SIMPLEQ_FIRST(&hc->transfer_free_q);
+    if (td == NULL)
+    {
+        urb->status = 0x2000010;
+
+        InterruptUnlock(&hc->Data_0xe4);
+
+        mentor_slogf(hc, 12, _SLOG_ERROR, 1, 
+            "%s - No TD's available",
+            "devu-hcd-dm816x-mg.so");
+    }
+    else
+    {
+        SIMPLEQ_REMOVE_HEAD(&hc->transfer_free_q, link);
+
+        InterruptUnlock(&hc->Data_0xe4);
+
+        td->flags = flags & 0x8000003f;
+        td->bytes_xfered = 0;
+        td->status = 0;
+        td->Data_0x30 = c;
+        td->Data_0x34 = urb;
+    }
+
+    return td;
+}
+
+
+
 int MENTOR_StartControlEtd(hctrl_t* a, int b)
 {
     
 }
 
 
+/* todo */
 static int mentor_ctrl_transfer(void* chdl, 
     iousb_transfer_t* urb/*sl*/, 
     iousb_endpoint_t* iousbep, 
@@ -4553,29 +4613,8 @@ static int mentor_ctrl_transfer(void* chdl,
     uint32_t flags/*sp52*/)
 {
     hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
-    struct
-    {
-        int fill_0[2]; //0
-        int Data_8; //8
-        struct
-        {
-            int Data_0; //0
-            //???
-        }* Data_0xc; //12
-        int Data_0x10; //16 = 0x10
-        int fill_0x14[5]; //20 = 0x14
-        int Data_0x28; //0x28
-        //???
-    }* r6 = iousbep->user;
-    struct
-    {
-        int Data_0; //0
-        int fill_4[2]; //4
-        int Data_0xc; //12 = 0xc
-        int fill_0x10[7]; //16 = 0x10
-        int Data_0x2c; //0x2c
-        //???
-    }* r7;
+    struct Struct_0xa4* r6 = iousbep->user;
+    struct _musb_transfer* td; //r7;
 
     if (0 != pthread_mutex_lock(&hc->Data_0xc/*r8*/))
     {
@@ -4613,8 +4652,8 @@ static int mentor_ctrl_transfer(void* chdl,
         return 0x13;
     }
     //4d62
-    r7 = MENTOR_TD_Setup(hc, urb, r6, flags);
-    if (r7 == NULL)
+    td = MENTOR_TD_Setup(hc, urb, r6, flags);
+    if (td == NULL)
     {
         //4d72
         if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
@@ -4636,26 +4675,26 @@ static int mentor_ctrl_transfer(void* chdl,
         return 0x0c;
     }
     //4dbc
-    r7->Data_0xc = buffer;
-    r7->Data_0 = length;
+    td->xfer_buffer = buffer;
+    td->xfer_length = length;
 
     InterruptLock(&hc->Data_0xe4/*sl*/);
 
-    r7->Data_0x2c = 0;
-    r6->Data_0xc->Data_0 = r7;
-    r6->Data_0xc = &r7->Data_0x2c;
+    td->link.sqe_next = NULL;
+    r6->Data_0xc->Data_0 = td;
+    r6->Data_0xc = &td->link.sqe_next;
 
     if ((r6->Data_0x10 & 1) == 0)
     {
         //4de4
         r6->Data_0x10 |= 1;
-        r6->Data_0x28 = 0;
+        r6->num = 0;
 
-        hc->Data_0xd8[0] = r7;
+        hc->Data_0xd8[0] = td;
 
         InterruptUnlock(&hc->Data_0xe4/*sl*/);
 
-        MENTOR_StartControlEtd(hc, r6->Data_8);
+        MENTOR_StartControlEtd(hc, r6->Data_8__);
         //->4e08
     }
     else
