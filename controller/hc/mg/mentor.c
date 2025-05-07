@@ -4597,10 +4597,91 @@ struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc,
 }
 
 
-
-int MENTOR_StartControlEtd(hctrl_t* a, int b)
+/* todo */
+int MENTOR_LoadFIFO(hctrl_t* hc, int b, int c, uint16_t d)
 {
-    
+
+}
+
+
+/* todo */
+void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
+{
+    struct Struct_0xa4* r5 = b->Data_0x30;
+    uint16_t r4;
+    int r3;
+    int r1;
+    int length;
+
+    td->flags |= (1 << 8);
+
+    r5->bData_0x1f = 0;
+
+    if (td->flags & PIPE_FLAGS_TOKEN_SETUP)
+    {
+        r5->Data_0x20 = 0;
+        r4 = (r1 << 3);
+    }
+    else if (td->flags & PIPE_FLAGS_TOKEN_STATUS)
+    {
+        r4 = (1 << 6);
+        r5->Data_0x20 = 1;
+    }
+    else
+    {
+        r4 = 0;
+    }
+
+    r3 = (r5->Data_0x20 != 0)? 0x700: 0x500;
+    r1 = (hc->flags & (1 << 7))? 0x800: 0;
+
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x102)) = r3 | r1;
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x80)) = (r5->Data_0x14 >> 4) & 0x7f;
+
+    if (r5->bData_0x1c != 0x40)
+    {
+        *((volatile uint8_t*)(hc->Data_0x14 + 0x82)) = r5->bData_0x1d;
+        *((volatile uint8_t*)(hc->Data_0x14 + 0x83)) = r5->bData_0x1e;
+    }
+
+    *((volatile uint8_t*)(hc->Data_0x14 + 0x10b)) = 0;
+
+    if (td->flags & PIPE_FLAGS_TOKEN_SETUP)
+    {
+        r4 |= (1 << 3) | (1 << 1); //0x0a;
+
+        MENTOR_LoadFIFO(hc, 0, td->xfer_buffer, td->xfer_length);
+    }
+    else
+    {
+        if (td->flags & PIPE_FLAGS_TOKEN_OUT)
+        {
+            if (r5->mps >= td->xfer_length)
+            {
+                length = td->xfer_length;
+            }
+            else
+            {
+                length = r5->mps;
+            }
+
+            td->bytes_xfered += length;
+
+            if (length > 0)
+            {
+                MENTOR_LoadFIFO(hc, 0, td->xfer_buffer, length);
+            }
+
+            r4 |= (1 << 1);
+        }
+        else
+        {
+            r4 |= (1 << 5);            
+        }
+    }
+
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x10a)) = r5->bData_0x1c;
+    *((volatile uint16_t*)(hc->Data_0x14 + 0x102)) |= r4;
 }
 
 
