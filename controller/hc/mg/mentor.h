@@ -1,9 +1,136 @@
+/*
+ * $QNXLicenseC: 
+ * Copyright 2010, QNX Software Systems.  
+ *  
+ * Licensed under the Apache License, Version 2.0 (the "License"). You  
+ * may not reproduce, modify or distribute this software except in  
+ * compliance with the License. You may obtain a copy of the License  
+ * at: http://www.apache.org/licenses/LICENSE-2.0  
+ *  
+ * Unless required by applicable law or agreed to in writing, software  
+ * distributed under the License is distributed on an "AS IS" basis,  
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied. 
+ * 
+ * This file may contain contributions from others, either as  
+ * contributors under the License or as licensors under other terms.   
+ * Please review this entire file for other proprietary rights or license  
+ * notices, as well as the QNX Development Suite License Guide at  
+ * http://licensing.qnx.com/license-guide/ for other information. 
+ * $
+ */
+
+#ifndef _MENTOR_H_INCLUDED
+#define _MENTOR_H_INCLUDED
 
 #include <queue.h>
 
 typedef struct _hctrl_t hctrl_t;
 
 #define HC_FLAG_USE_DMA           ( 1 << 0 )
+
+// Target Address Registers
+#define MUSB_TXFUNCADDR(n)			( 0x80 + ( (n) * 8 ) )	// 8-bit
+#define MUSB_TXHUBADDR(n)			( 0x82 + ( (n) * 8 ) )	// 8-bit
+#define MUSB_TXHUBPORT(n)			( 0x83 + ( (n) * 8 ) )	// 8-bit
+#define MUSB_RXFUNCADDR(n)			( 0x84 + ( (n) * 8 ) )	// 8-bit
+#define MUSB_RXHUBADDR(n)			( 0x86 + ( (n) * 8 ) )	// 8-bit
+#define MUSB_RXHUBPORT(n)			( 0x87 + ( (n) * 8 ) )	// 8-bit
+
+
+#define MUSB_CSR0					0x102  // 16-bit
+#define MUSB_IDX_CSR0				0x12	// 16-bit
+	/* peripheral mode */
+	#define CSR0_RXPKTRDY					( 1 << 0 ) 
+	#define CSR0_TXPKTRDY					( 1 << 1 ) 
+	#define CSR0_SENTSTALL					( 1 << 2 ) 
+	#define CSR0_DATAEND					( 1 << 3 ) 
+	#define CSR0_SETUPEND					( 1 << 4 ) 
+	#define CSR0_SENDSTALL					( 1 << 5 ) 
+	#define CSR0_SERVICED_RXPKTRDY			( 1 << 6 ) 
+	#define CSR0_SERVICED_SETUP_END			( 1 << 7 ) 
+	#define CSR0_FLUSH_FIFO					( 1 << 8 )
+
+	/* host mode */
+	//#define CSR0_RXPKTRDY					( 1 << 0 ) 
+	//#define CSR0_TXPKTRDY					( 1 << 1 ) 
+	#define CSR0_RXSTALL					( 1 << 2 ) 
+	#define CSR0_SETUPPKT					( 1 << 3 ) 
+	#define CSR0_ERROR						( 1 << 4 ) 
+	#define CSR0_REQ_PKT					( 1 << 5 ) 
+	#define CSR0_STATUS_PKT					( 1 << 6 ) 
+	#define CSR0_NAK_TIMEOUT				( 1 << 7 ) 
+	//#define CSR0_FLUSH_FIFO				( 1 << 8 )
+	#define CSR0_DATA_TOGGLE				( 1 << 9 )
+	#define CSR0_DATA_TOGGLE_WR_EN			( 1 << 10 )
+	#define CSR0_DISPING					( 1 << 11 )
+
+
+#define MUSB_RXCSR(n)				( 0x106 + ( 0x10 * (n) ) ) // 16-bit
+#define MUSB_IDX_RXCSR				0x16	// 16-bit
+
+	/* peripheral */
+	#define RXCSR_RXPKTRDY					( 1 << 0 )
+	#define RXCSR_FIFO_FULL					( 1 << 1 )
+	#define RXCSR_OVERRUN					( 1 << 2 )
+	#define RXCSR_DATA_ERROR				( 1 << 3 )
+	#define RXCSR_FLUSHFIFO					( 1 << 4 )
+	#define RXCSR_SEND_STALL				( 1 << 5 )
+	#define RXCSR_SENT_STALL				( 1 << 6 )
+	#define RXCSR_CLR_DATA_TOGGLE			( 1 << 7 )
+	#define RXCSR_INCOMP_RX					( 1 << 8 )
+	#define RXCSR_DMA_REQ_MODE				( 1 << 11 )
+	#define RXCSR_DMA_REQ_TYPE0				( 0 << 11 )
+	#define RXCSR_DMA_REQ_TYPE1				( 1 << 11 )
+	#define RXCSR_DISNYET					( 1 << 12 )
+	#define RXCSR_PID_ERR					( 1 << 12 )
+	#define RXCSR_DMA_REQ_EN				( 1 << 13 )
+	#define RXCSR_ISO						( 1 << 14 )
+	#define RXCSR_AUTOCLEAR					( 1 << 15 )
+
+	/* host mode */ 	
+	//#define RXCSR_RXPKTRDY				( 1 << 0 )
+	//#define RXCSR_FIFO_FULL				( 1 << 1 )
+	#define RXCSR_ERROR						( 1 << 2 )
+	//#define RXCSR_DATA_ERROR				( 1 << 3 )
+	#define RXCSR_NAK_TIMEOUT				( 1 << 3 )
+	//#define RXCSR_FLUSH_FIFO				( 1 << 4 )
+	#define RXCSR_REQ_PKT					( 1 << 5 )
+	#define RXCSR_RX_STALL					( 1 << 6 )
+	//#define RXCSR_CLR_DATA_TOGGLE			( 1 << 7 )
+	//#define RXCSR_INCOMP_RX					( 1 << 8 )
+	#define RXCSR_DATA_TOGGLE				( 1 << 9 )
+	#define RXCSR_DATA_TOGGLE_WR_EN			( 1 << 10 )
+	//#define RXCSR_DMA_REQ_MODE			( 1 << 11 )
+	//#define RXCSR_PID_ERR					( 1 << 12 )
+	//#define RXCSR_DMA_REQ_EN				( 1 << 13 )
+	#define RXCSR_AUTOREQ					( 1 << 14 )
+	//#define RXCSR_AUTOCLEAR				( 1 << 15 )
+
+
+#define MUSB_TXTYPE(n)				( 0x10a + ( 0x10 * (n) ) ) // 8-bit
+#define MUSB_IDX_TXTYPE				0x1a	// 8-bit
+	/* host only */
+	#define TXTYPE_EPNUM_POS				0
+	#define TXTYPE_EPNUM_MSK				( 0xf << TXTYPE_EPNUM_POS )
+	#define TXTYPE_PROTOCOL_POS				4
+	#define TXTYPE_PROTOCOL_MSK				( 3 << TXTYPE_PROTOCOL_POS )
+	#define TXTYPE_PROTOCOL_CONTROL			( 0 << TXTYPE_PROTOCOL_POS )
+	#define TXTYPE_PROTOCOL_ISOCH			( 1 << TXTYPE_PROTOCOL_POS )
+	#define TXTYPE_PROTOCOL_BULK			( 2 << TXTYPE_PROTOCOL_POS )
+	#define TXTYPE_PROTOCOL_INTERRUPT		( 3 << TXTYPE_PROTOCOL_POS )
+	#define TXTYPE_SPEED_POS				6
+	#define TXTYPE_SPEED_MSK				( 3 << TXTYPE_SPEED_POS )
+	#define TXTYPE_SPEED_HIGH				( 1 << TXTYPE_SPEED_POS )
+	#define TXTYPE_SPEED_FULL				( 2 << TXTYPE_SPEED_POS )
+	#define TXTYPE_SPEED_LOW				( 3 << TXTYPE_SPEED_POS )
+	
+
+#define MUSB_NAKLIMIT0(n)			( 0x10b + ( 0x10 * (n) ) ) // 8-bit
+#define MUSB_IDX_NAKLIMIT0			0x1b	// 8-bit
+
+#define MUSB_TXINTERVAL(n)			( 0x10b + ( 0x10 * (n) ) ) // 8-bit
+#define MUSB_IDX_TXINTERVAL			0x1b	// 8-bit
+
 
 
 struct Struct_0x94
@@ -39,8 +166,12 @@ struct Struct_0xa4
 {
     struct Struct_0xa4* Data_0; //0
     struct Struct_0xa4* Data_4; //4
+#if 0
     struct _musb_transfer* Data_8__; //8
-    struct Struct_0x94* Data_0xc; //12
+    struct /*Struct_0x94*/_musb_transfer** Data_0xc; //12
+#else
+    SIMPLEQ_HEAD(, _musb_transfer) Data_8;
+#endif
     int Data_0x10; //0x10 = 16
     int Data_0x14; //0x14 = 20
     uint16_t mps; //0x18 = 24
@@ -101,8 +232,8 @@ struct _hctrl_t {
     SIMPLEQ_HEAD(, _musb_transfer) transfer_free_q; //0xac
     SIMPLEQ_HEAD(, _musb_transfer) transfer_complete_q; //0xb4
     void* transfer_mem; //0xbc
-    void* Data_0xc0; //0xc0
-    int fill_0xc4; //0xc4
+    struct Struct_0xa4* Data_0xc0; //0xc0
+    struct Struct_0xa4* Data_0xc4; //0xc4
     int Data_0xc8; //0xc8
     int Data_0xcc; //0xcc
     int Data_0xd0; //0xd0
@@ -120,3 +251,10 @@ struct _hctrl_t {
     //0x108
 };
 
+
+static inline void HW_Write16( hctrl_t* hc, uint32_t offset, uint16_t data ) {
+	*((volatile uint16_t*)(hc->Data_0x14 + offset)) = data;
+}
+
+
+#endif

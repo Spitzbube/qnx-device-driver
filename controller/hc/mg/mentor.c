@@ -193,6 +193,115 @@ int mentor_fifo_init(hctrl_t* hc, char* b)
 }
 
 
+/* todo */
+int MENTOR_ProcessInComplete(hctrl_t* hc/*r5*/,
+        struct _musb_transfer* td/*r4*/, int32_t r7, int r8)
+{
+#if 0
+    fprintf(stderr, "MENTOR_ProcessInComplete: TODO!!!\n");
+#endif
+
+    struct Struct_0xa4* r6 = td->Data_0x30;
+
+    if (r6->bData_0x1f == 0)
+    {
+        //46f8
+        if (td->flags & 0xff0000)
+        {
+            //4700
+            InterruptLock(&hc->Data_0xe4/*r6*/);
+
+#if 0
+            td->link.sqe_next = NULL;
+            *(hc->transfer_complete_q.sqh_last) = td;
+            hc->transfer_complete_q.sqh_last = &td->link.sqe_next;
+#else
+            SIMPLEQ_INSERT_TAIL(&hc->transfer_complete_q, td, link);
+#endif
+            //->47c2
+            InterruptUnlock(&hc->Data_0xe4/*r6*/);
+            //->47d0
+        }
+        else
+        {
+            //471e
+
+            td->bytes_xfered += r7;
+
+            int r2 = (td->flags & (1 << 14)) || 
+                (r7 % r6->mps) || (r7 == 0);
+            
+            if ((r8 != 0) || 
+                (td->bytes_xfered >= td->xfer_length) || 
+                r2)
+            {
+                //4750
+                HW_Write16(hc, MUSB_RXCSR(r6->num), 0);
+
+                if (r8 != 0)
+                {
+                    HW_Write16(hc, MUSB_RXCSR(r6->num), RXCSR_FLUSHFIFO);
+                    HW_Write16(hc, MUSB_RXCSR(r6->num), RXCSR_FLUSHFIFO);
+                }
+
+                InterruptLock(&hc->Data_0xe4/*r7*/);
+
+    //            hc->Data_0xc4[r6->num] = NULL;
+//                r6->Data_0x10 &= ~0x01;
+                td->status = r8;
+
+    #if 0
+                r6->Data_8__ = SIMPLEQ_NEXT(td, link);
+                if (r6->Data_8__ == 0)
+                {
+                    r6->Data_0xc = &r6->Data_8__;
+                }
+    #else
+                if ((r6->Data_8.sqh_first = SIMPLEQ_NEXT(td, link)) == NULL)
+                {
+                    r6->Data_8.sqh_last = &r6->Data_8.sqh_first;
+                }
+    #endif
+                //4784
+                SIMPLEQ_INSERT_TAIL(&hc->transfer_complete_q, td, link);
+
+                if ((r8 == 0) &&
+                    ((td = r6->Data_8.sqh_first) != NULL))
+                {
+                    //479e
+                    InterruptUnlock(&hc->Data_0xe4);
+                    //->47c8
+                    MENTOR_StartEtd(hc, td);
+                }
+                else
+                {
+                    //47a6
+                    hc->Data_0xd8[r6->num] = 0;
+
+                    if (r8 == 0)
+                    {
+                        //47b8
+                        r6->Data_0x10 &= ~(1 << 0);
+
+                    }
+                    //47c0
+                    InterruptUnlock(&hc->Data_0xe4);
+                }
+            }
+            else
+            {
+                //47c8
+                //0x00007614: Restart receive for more than 512 bytes...
+//                MENTOR_RestartEtd(hc, td);
+                MENTOR_StartEtd(hc, td);
+            }
+        }
+    }
+    //47d0
+    return 0;
+}
+
+
 /* complete */
 int MENTOR_AllocateTD(hctrl_t* hc)
 {
@@ -228,17 +337,58 @@ void MENTOR_FreeTD(hctrl_t* hc)
 }
 
 
-/* todo */
+/* complete */
 int MENTOR_AllocateED(hctrl_t* hc)
 {
+    uint32_t i;
+    struct Struct_0xa4* r4;
+    
+    r4 = calloc(1, (hc->num_ed + 1) * sizeof(struct Struct_0xa4));
+    if (r4 == NULL)
+    {
+        return 12;
+    }
 
+    hc->Data_0xc0 = r4;
+
+    memset(r4, 0, (hc->num_ed + 1) * sizeof(struct Struct_0xa4));
+
+#if 0
+    r4->Data_8__ = NULL;
+    r4->Data_0xc = &r4->Data_8__;
+#else
+    SIMPLEQ_INIT(&r4->Data_8);
+#endif
+    r4->Data_0x10 = 0;
+    hc->Data_0xc4 = r4;
+
+    for (i = 0; i < hc->num_ed; i++)
+    {
+        r4->Data_0x2c = -1;
+        r4->Data_0 = r4 + 1;
+        r4->Data_0->Data_4 = r4;
+#if 0
+        r4->Data_0->Data_8__ = NULL;
+        r4->Data_0->Data_0xc = &r4->Data_0->Data_8__;
+#else
+        SIMPLEQ_INIT(&r4->Data_0->Data_8);
+#endif
+        r4->Data_0->Data_0x10 = 0;
+
+        r4++;
+    }
+
+    r4->Data_0 = hc->Data_0xc4;
+    hc->Data_0xc4->Data_4 = r4;
+
+    return 0;
 }
 
 
-/* todo */
-int MENTOR_FreeED(hctrl_t* hc)
+/* complete */
+void MENTOR_FreeED(hctrl_t* hc)
 {
-
+    free(hc->Data_0xc0);
 }
 
 
@@ -4607,8 +4757,8 @@ int MENTOR_LoadFIFO(hctrl_t* hc, int b, int c, uint16_t d)
 /* todo */
 void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
 {
-    struct Struct_0xa4* r5 = b->Data_0x30;
-    uint16_t r4;
+    struct Struct_0xa4* r5 = td->Data_0x30;
+    uint16_t csr; //r4
     int r3;
     int r1;
     int length;
@@ -4620,35 +4770,37 @@ void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
     if (td->flags & PIPE_FLAGS_TOKEN_SETUP)
     {
         r5->Data_0x20 = 0;
-        r4 = (r1 << 3);
+        csr = CSR0_SETUPPKT;
     }
     else if (td->flags & PIPE_FLAGS_TOKEN_STATUS)
     {
-        r4 = (1 << 6);
+        csr = CSR0_STATUS_PKT;
         r5->Data_0x20 = 1;
     }
     else
     {
-        r4 = 0;
+        csr = 0;
     }
 
-    r3 = (r5->Data_0x20 != 0)? 0x700: 0x500;
-    r1 = (hc->flags & (1 << 7))? 0x800: 0;
+    r3 = (r5->Data_0x20 != 0)? 
+        CSR0_FLUSH_FIFO | CSR0_DATA_TOGGLE | CSR0_DATA_TOGGLE_WR_EN /*0x700*/: 
+        CSR0_FLUSH_FIFO | CSR0_DATA_TOGGLE_WR_EN /*0x500*/;
+    r1 = (hc->flags & (1 << 7))? CSR0_DISPING: 0;
 
-    *((volatile uint16_t*)(hc->Data_0x14 + 0x102)) = r3 | r1;
-    *((volatile uint16_t*)(hc->Data_0x14 + 0x80)) = (r5->Data_0x14 >> 4) & 0x7f;
+    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_CSR0)) = r3 | r1;
+    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_TXFUNCADDR(0))) = (r5->Data_0x14 >> 4) & 0x7f;
 
     if (r5->bData_0x1c != 0x40)
     {
-        *((volatile uint8_t*)(hc->Data_0x14 + 0x82)) = r5->bData_0x1d;
-        *((volatile uint8_t*)(hc->Data_0x14 + 0x83)) = r5->bData_0x1e;
+        *((volatile uint8_t*)(hc->Data_0x14 + MUSB_TXHUBADDR(0))) = r5->bData_0x1d;
+        *((volatile uint8_t*)(hc->Data_0x14 + MUSB_TXHUBPORT(0))) = r5->bData_0x1e;
     }
 
-    *((volatile uint8_t*)(hc->Data_0x14 + 0x10b)) = 0;
+    *((volatile uint8_t*)(hc->Data_0x14 + MUSB_NAKLIMIT0(0))) = 0;
 
     if (td->flags & PIPE_FLAGS_TOKEN_SETUP)
     {
-        r4 |= (1 << 3) | (1 << 1); //0x0a;
+        csr |= CSR0_SETUPPKT | CSR0_TXPKTRDY; //0x0a;
 
         MENTOR_LoadFIFO(hc, 0, td->xfer_buffer, td->xfer_length);
     }
@@ -4672,16 +4824,16 @@ void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
                 MENTOR_LoadFIFO(hc, 0, td->xfer_buffer, length);
             }
 
-            r4 |= (1 << 1);
+            csr |= CSR0_TXPKTRDY;
         }
         else
         {
-            r4 |= (1 << 5);            
+            csr |= CSR0_REQ_PKT;            
         }
     }
 
-    *((volatile uint16_t*)(hc->Data_0x14 + 0x10a)) = r5->bData_0x1c;
-    *((volatile uint16_t*)(hc->Data_0x14 + 0x102)) |= r4;
+    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_TXTYPE(0))) = r5->bData_0x1c;
+    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_CSR0)) |= csr;
 }
 
 
@@ -4761,9 +4913,13 @@ static int mentor_ctrl_transfer(void* chdl,
 
     InterruptLock(&hc->Data_0xe4/*sl*/);
 
+#if 0
     td->link.sqe_next = NULL;
-    r6->Data_0xc->Data_0 = td;
+    *(r6)->Data_0xc = td;
     r6->Data_0xc = &td->link.sqe_next;
+#else
+    SIMPLEQ_INSERT_TAIL(&r6->Data_8, td, link);
+#endif
 
     if ((r6->Data_0x10 & 1) == 0)
     {
@@ -4775,7 +4931,11 @@ static int mentor_ctrl_transfer(void* chdl,
 
         InterruptUnlock(&hc->Data_0xe4/*sl*/);
 
+#if 0
         MENTOR_StartControlEtd(hc, r6->Data_8__);
+#else
+        MENTOR_StartControlEtd(hc, SIMPLEQ_FIRST(&r6->Data_8));
+#endif
         //->4e08
     }
     else
