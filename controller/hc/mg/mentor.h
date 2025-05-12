@@ -252,8 +252,24 @@ struct _hctrl_t {
 };
 
 
+static inline uint16_t HW_Read16( hctrl_t* hc, uint32_t offset ) {
+	uint16_t data;
+	data = *((volatile uint16_t*)(hc->Data_0x14 + offset));
+	return data;
+}
+
 static inline void HW_Write16( hctrl_t* hc, uint32_t offset, uint16_t data ) {
 	*((volatile uint16_t*)(hc->Data_0x14 + offset)) = data;
+}
+
+static inline void HW_Write16Or( hctrl_t* hc, uint32_t offset, uint16_t data ) {
+	data = HW_Read16( hc, offset ) | data;
+	HW_Write16( hc, offset, data);
+}
+
+
+static inline void HW_Write8( hctrl_t* hc, uint32_t offset, uint8_t data ) {
+	*((volatile uint8_t*)(hc->Data_0x14 + offset)) = data;
 }
 
 

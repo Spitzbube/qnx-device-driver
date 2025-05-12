@@ -4732,8 +4732,8 @@ void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
 {
     struct Struct_0xa4* r5 = td->Data_0x30;
     uint16_t csr; //r4
-    int r3;
-    int r1;
+    int csrH = 0;
+    int r1 = 0;
     int length;
 
     td->flags |= (1 << 8);
@@ -4755,21 +4755,24 @@ void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
         csr = 0;
     }
 
-    r3 = (r5->Data_0x20 != 0)? 
-        CSR0_FLUSH_FIFO | CSR0_DATA_TOGGLE | CSR0_DATA_TOGGLE_WR_EN /*0x700*/: 
-        CSR0_FLUSH_FIFO | CSR0_DATA_TOGGLE_WR_EN /*0x500*/;
+    if (r5->Data_0x20 != 0)
+    {
+        csrH = CSR0_DATA_TOGGLE;
+    }
+    csrH |= CSR0_FLUSH_FIFO | CSR0_DATA_TOGGLE_WR_EN;
     r1 = (hc->flags & (1 << 7))? CSR0_DISPING: 0;
+    csrH |= r1;
 
-    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_CSR0)) = r3 | r1;
-    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_TXFUNCADDR(0))) = (r5->Data_0x14 >> 4) & 0x7f;
+    HW_Write16(hc, MUSB_CSR0, csrH);
+    HW_Write16(hc, MUSB_TXFUNCADDR(0), (r5->Data_0x14 >> 4) & 0x7f);
 
     if (r5->bData_0x1c != 0x40)
     {
-        *((volatile uint8_t*)(hc->Data_0x14 + MUSB_TXHUBADDR(0))) = r5->bData_0x1d;
-        *((volatile uint8_t*)(hc->Data_0x14 + MUSB_TXHUBPORT(0))) = r5->bData_0x1e;
+        HW_Write8(hc, MUSB_TXHUBADDR(0), r5->bData_0x1d);
+        HW_Write8(hc, MUSB_TXHUBPORT(0), r5->bData_0x1e);
     }
 
-    *((volatile uint8_t*)(hc->Data_0x14 + MUSB_NAKLIMIT0(0))) = 0;
+    HW_Write8(hc, MUSB_NAKLIMIT0(0), 0);
 
     if (td->flags & PIPE_FLAGS_TOKEN_SETUP)
     {
@@ -4805,8 +4808,74 @@ void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
         }
     }
 
-    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_TXTYPE(0))) = r5->bData_0x1c;
-    *((volatile uint16_t*)(hc->Data_0x14 + MUSB_CSR0)) |= csr;
+    HW_Write16(hc, MUSB_TXTYPE(0), r5->bData_0x1c);
+    HW_Write16Or(hc, MUSB_CSR0, csr);
+}
+
+
+/* complete */
+static int mentor_ctrl_transfer_abort(void* chdl, 
+    iousb_transfer_t* urb, 
+    iousb_endpoint_t* iousbep)
+{
+    hctrl_t* hc/*r6*/ = ((struct _usb_hcd*)chdl)->hc_data;
+    struct Struct_0xa4* r5;
+    struct _musb_transfer* r4;
+
+    if (0 != pthread_mutex_lock(&hc->Data_4/*r8*/))
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x435);
+    }
+    //4620
+    r5 = iousbep->user;
+    if (r5 == NULL)
+    {
+        //4624
+        if (0 != pthread_mutex_unlock(&hc->Data_4/*r8*/))
+        {
+            //462e
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x438);
+        }
+        //->46b8
+        return 2;
+    }
+    //4648
+    HW_Write16(hc, MUSB_CSR0, CSR0_FLUSH_FIFO);
+
+    InterruptLock(&hc->Data_0xe4/*r9*/);
+
+    while ((r4 = r5->Data_8.sqh_first) != NULL)
+    {
+        //4666
+        if ((r5->Data_8.sqh_first = r4->link.sqe_next) == NULL)
+        {
+            r5->Data_8.sqh_last = &r5->Data_8.sqh_first;
+        }
+        //466e
+        r4->flags = 0;
+
+        SIMPLEQ_INSERT_TAIL(&hc->transfer_free_q, r4, link);
+    }
+    //4680
+    InterruptUnlock(&hc->Data_0xe4/*r9*/);
+
+    hc->Data_0xd8[0] = 0;
+
+    r5->Data_0x10 &= ~(1 << 0);
+
+    if (0 != pthread_mutex_unlock(&hc->Data_4/*r8*/))
+    {
+        //469c
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x449);
+    }
+    //46ba
+    return 0;
 }
 
 
@@ -4933,9 +5002,6 @@ static int mentor_ctrl_transfer(void* chdl,
     //4e4a
     return 0;
 }
-
-
-
 
 
 
