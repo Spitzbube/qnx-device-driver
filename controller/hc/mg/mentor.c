@@ -211,21 +211,13 @@ int MENTOR_ProcessInComplete(hctrl_t* hc/*r5*/,
             //4700
             InterruptLock(&hc->Data_0xe4/*r6*/);
 
-#if 0
-            td->link.sqe_next = NULL;
-            *(hc->transfer_complete_q.sqh_last) = td;
-            hc->transfer_complete_q.sqh_last = &td->link.sqe_next;
-#else
             SIMPLEQ_INSERT_TAIL(&hc->transfer_complete_q, td, link);
-#endif
-            //->47c2
+
             InterruptUnlock(&hc->Data_0xe4/*r6*/);
-            //->47d0
         }
         else
         {
             //471e
-
             td->bytes_xfered += r7;
 
             int r2 = (td->flags & (1 << 14)) || 
@@ -246,22 +238,12 @@ int MENTOR_ProcessInComplete(hctrl_t* hc/*r5*/,
 
                 InterruptLock(&hc->Data_0xe4/*r7*/);
 
-    //            hc->Data_0xc4[r6->num] = NULL;
-//                r6->Data_0x10 &= ~0x01;
                 td->status = r8;
 
-    #if 0
-                r6->Data_8__ = SIMPLEQ_NEXT(td, link);
-                if (r6->Data_8__ == 0)
-                {
-                    r6->Data_0xc = &r6->Data_8__;
-                }
-    #else
                 if ((r6->Data_8.sqh_first = SIMPLEQ_NEXT(td, link)) == NULL)
                 {
                     r6->Data_8.sqh_last = &r6->Data_8.sqh_first;
                 }
-    #endif
                 //4784
                 SIMPLEQ_INSERT_TAIL(&hc->transfer_complete_q, td, link);
 
@@ -291,8 +273,6 @@ int MENTOR_ProcessInComplete(hctrl_t* hc/*r5*/,
             else
             {
                 //47c8
-                //0x00007614: Restart receive for more than 512 bytes...
-//                MENTOR_RestartEtd(hc, td);
                 MENTOR_StartEtd(hc, td);
             }
         }
@@ -353,12 +333,8 @@ int MENTOR_AllocateED(hctrl_t* hc)
 
     memset(r4, 0, (hc->num_ed + 1) * sizeof(struct Struct_0xa4));
 
-#if 0
-    r4->Data_8__ = NULL;
-    r4->Data_0xc = &r4->Data_8__;
-#else
     SIMPLEQ_INIT(&r4->Data_8);
-#endif
+
     r4->Data_0x10 = 0;
     hc->Data_0xc4 = r4;
 
@@ -367,12 +343,9 @@ int MENTOR_AllocateED(hctrl_t* hc)
         r4->Data_0x2c = -1;
         r4->Data_0 = r4 + 1;
         r4->Data_0->Data_4 = r4;
-#if 0
-        r4->Data_0->Data_8__ = NULL;
-        r4->Data_0->Data_0xc = &r4->Data_0->Data_8__;
-#else
+
         SIMPLEQ_INIT(&r4->Data_0->Data_8);
-#endif
+
         r4->Data_0->Data_0x10 = 0;
 
         r4++;
