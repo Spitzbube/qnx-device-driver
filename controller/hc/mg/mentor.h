@@ -164,8 +164,10 @@ struct _musb_transfer
 
 struct Struct_0xa4
 {
-    struct Struct_0xa4* Data_0; //0
-    struct Struct_0xa4* Data_4; //4
+    struct {
+        struct Struct_0xa4* next; //0
+        struct Struct_0xa4* prev; //4
+    } link;
 #if 0
     struct _musb_transfer* Data_8__; //8
     struct /*Struct_0x94*/_musb_transfer** Data_0xc; //12
@@ -234,10 +236,10 @@ struct _hctrl_t {
     void* transfer_mem; //0xbc
     struct Struct_0xa4* Data_0xc0; //0xc0
     struct Struct_0xa4* Data_0xc4; //0xc4
-    int Data_0xc8; //0xc8
-    int Data_0xcc; //0xcc
-    int Data_0xd0; //0xd0
-    int Data_0xd4; //0xd4
+    struct Struct_0xa4* Data_0xc8; //0xc8
+    struct Struct_0xa4* Data_0xcc; //0xcc
+    struct Struct_0xa4* Data_0xd0; //0xd0
+    struct Struct_0xa4* Data_0xd4; //0xd4
     int* Data_0xd8; //0xd8
     void* Data_0xdc; //0xdc
     int fill_0xe0; //0xe0

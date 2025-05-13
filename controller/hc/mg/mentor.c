@@ -341,18 +341,18 @@ int MENTOR_AllocateED(hctrl_t* hc)
     for (i = 0; i < hc->num_ed; i++)
     {
         r4->Data_0x2c = -1;
-        r4->Data_0 = r4 + 1;
-        r4->Data_0->Data_4 = r4;
+        r4->link.next = r4 + 1;
+        r4->link.next->link.prev = r4;
 
-        SIMPLEQ_INIT(&r4->Data_0->Data_8);
+        SIMPLEQ_INIT(&r4->link.next->Data_8);
 
-        r4->Data_0->Data_0x10 = 0;
+        r4->link.next->Data_0x10 = 0;
 
         r4++;
     }
 
-    r4->Data_0 = hc->Data_0xc4;
-    hc->Data_0xc4->Data_4 = r4;
+    r4->link.next = hc->Data_0xc4;
+    hc->Data_0xc4->link.prev = r4;
 
     return 0;
 }
@@ -365,10 +365,107 @@ void MENTOR_FreeED(hctrl_t* hc)
 }
 
 
-/* todo */
-int MENTOR_BuildEDList(hctrl_t* hc, int* b)
+/* complete */
+struct Struct_0xa4* MENTOR_GetEDPool(hctrl_t* hc)
 {
+#if 0
+    fprintf(stderr, "MENTOR_GetEDPool: TODO!!!\n");
+#endif
 
+    struct Struct_0xa4* r4;
+    struct Struct_0xa4* r6 = hc->Data_0xc4;
+
+    if (pthread_mutex_lock(&hc->Data_4) != 0)
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x133);
+    }
+    //547c
+    r4 = r6->link.next;
+    if (r4 == r6)
+    {
+        //5482
+        if (pthread_mutex_unlock(&hc->Data_4) != 0)
+        {
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x136);
+        }
+
+        r4 = NULL;
+    }
+    else
+    {
+        //54a6
+        r6->link.next = r4->link.next;
+        r4->link.next->link.prev = r6;
+        r4->Data_0x10 |= (1 << 31);
+        r4->Data_0x38 = 0;
+
+        if (pthread_mutex_unlock(&hc->Data_4) != 0)
+        {
+            fprintf(stderr, "mutex lock %s %d\n",
+                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+                0x141);
+        }
+    }
+    //loc_5428
+    return r4;
+}
+
+
+/* complete */
+int MENTOR_BuildEDList(hctrl_t* hc, struct Struct_0xa4** b)
+{
+    struct Struct_0xa4* r3;
+    
+    r3 = MENTOR_GetEDPool(hc);
+    if (r3 == NULL)
+    {
+        return 12;
+    }
+
+    *b = r3;
+    r3->Data_0x10 |= (1 << 30) | (1 << 3);
+    SIMPLEQ_INIT(&r3->Data_8);
+    r3->link.prev = r3;
+    r3->link.next = r3;
+
+    return 0;
+}
+
+
+/* complete */
+int MENTOR_HookED(hctrl_t* hc, 
+    struct Struct_0xa4* r6, 
+    struct Struct_0xa4* r4)
+{
+    struct Struct_0xa4* r3;
+
+    if (pthread_mutex_lock(&hc->Data_4) != 0)
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x335);
+    }
+
+    r3 = r6->link.prev;
+    r3->link.next = r4;
+    r4->link.next = r6;
+    r6->link.prev = r4;
+    r4->link.prev = r3;
+
+    SIMPLEQ_INIT(&r4->Data_8);
+
+    if (pthread_mutex_unlock(&hc->Data_4) != 0)
+    {
+        fprintf(stderr, "mutex lock %s %d\n",
+            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
+            0x340);
+    }
+
+    return 0;
 }
 
 
@@ -4955,29 +5052,19 @@ static int mentor_ctrl_transfer(void* chdl,
 
     InterruptLock(&hc->Data_0xe4/*sl*/);
 
-#if 0
-    td->link.sqe_next = NULL;
-    *(r6)->Data_0xc = td;
-    r6->Data_0xc = &td->link.sqe_next;
-#else
     SIMPLEQ_INSERT_TAIL(&r6->Data_8, td, link);
-#endif
 
-    if ((r6->Data_0x10 & 1) == 0)
+    if ((r6->Data_0x10 & (1 << 0)) == 0)
     {
         //4de4
-        r6->Data_0x10 |= 1;
+        r6->Data_0x10 |= (1 << 0);
         r6->num = 0;
 
         hc->Data_0xd8[0] = td;
 
         InterruptUnlock(&hc->Data_0xe4/*sl*/);
 
-#if 0
-        MENTOR_StartControlEtd(hc, r6->Data_8__);
-#else
         MENTOR_StartControlEtd(hc, SIMPLEQ_FIRST(&r6->Data_8));
-#endif
         //->4e08
     }
     else
