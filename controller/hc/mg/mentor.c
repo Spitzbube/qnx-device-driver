@@ -4583,6 +4583,8 @@ static int mentor_get_root_device_speed(usb_hcd_t* uhcd, uint32_t port)
 
 
 
+#endif
+
 
 
 static void process_args(hctrl_t* hc, char* args)
@@ -4771,7 +4773,7 @@ static void process_args(hctrl_t* hc, char* args)
 
 
 /* todo */
-static int mentor_controller_init(usb_hcd_t* uhcd/*r5*/, 
+int mentor_controller_init(usb_hcd_t* uhcd/*r5*/, 
     uint32_t flags, 
     char *args/*r7*/)
 {
@@ -4779,9 +4781,15 @@ static int mentor_controller_init(usb_hcd_t* uhcd/*r5*/,
 
     mentor_slogf(NULL, 12, _SLOG_INFO, 0, 
         "%s(%d): %s (%s %s):  args %s",
+#ifdef USE_ORIGINAL_DLL
+        __FUNCTION__, __LINE__,
+        "devu-hcd-dm816x-mg.so",
+        __DATE__, __TIME__,
+#else
         "mentor_controller_init", 3481,
         "devu-hcd-dm816x-mg.so",
         "Feb 15 2017", "16:12:54",
+#endif
         (args == NULL)? "": args);
 
     uhcd->hw_ctrl.cname = "dm816x";
@@ -4827,6 +4835,7 @@ static int mentor_controller_init(usb_hcd_t* uhcd/*r5*/,
     return 0;
 }
 
+#ifndef USE_ORIGINAL_DLL
 
 /* complete */
 struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc, 
