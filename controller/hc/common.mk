@@ -16,6 +16,11 @@ EXTRA_INCVPATH += $(SERVICES_ROOT)/usb/private/hw
 
 include $(MKFILES_ROOT)/qmacros.mk
 
+
+NAME = devu-hcd-test
+LDFLAGS += -ldevu-hcd-dm816x-mg
+
+
 include $(SECTION_ROOT)/pinfo.mk
 
 include $(MKFILES_ROOT)/qtargets.mk

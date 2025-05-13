@@ -1,4 +1,6 @@
 
+#define USE_ORIGINAL_DLL
+
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
@@ -7,17 +9,57 @@
 #include <atomic.h>
 #include <sys/mman.h>
 #include <sys/slog.h>
+#ifndef USE_ORIGINAL_DLL
 #include "pci.h"
+#endif
 #include <sys/io-usb-otg.h>
 #include "mentor.h"
 
-
+#ifndef USE_ORIGINAL_DLL
 /*static*/ iousb_self_t mentor_iousb_self;
 /*static*/int dma_nums;
+#else
+extern iousb_self_t mentor_iousb_self;
+extern int mentor_slogf(hctrl_t* hc, 
+    int opcode, int severity, int verbosity,
+    const char* fmt, ...);
+
+#endif
 
 static int mentor_init(void*, dispatch_t*, iousb_self_t*, char*);
 static int mentor_shutdown(void*);
 
+#ifdef USE_ORIGINAL_DLL
+extern int mentor_controller_init(usb_hcd_t*, uint32_t, char*);
+extern int mentor_controller_start(usb_hcd_t*);
+extern int mentor_controller_stop(usb_hcd_t*);
+extern int mentor_controller_shutdown(usb_hcd_t*);
+extern int mentor_set_bus_state(usb_hcd_t*, uint32_t);
+extern int mentor_set_port_feature(usb_hcd_t*, uint32_t, uint32_t);
+extern int mentor_clear_port_feature(usb_hcd_t*, uint32_t, uint32_t);
+extern int mentor_check_port_status(usb_hcd_t*, uint32_t*);
+extern int mentor_check_device_connected(usb_hcd_t*, uint32_t);
+extern int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
+extern int mentor_get_timer_from_controller(usb_hcd_t*);
+
+extern int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+extern int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
+extern int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
+extern int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
+
+extern int mentor_isoch_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+extern int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
+extern int mentor_isoch_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
+extern int mentor_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
+
+extern int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+extern int mentor_bulk_endpoint_disable(void*, iousb_endpoint_t*);
+extern int mentor_bulk_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
+
+extern int mentor_int_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+extern int mentor_int_endpoint_disable(void*, iousb_endpoint_t*);
+extern int mentor_int_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
+#else
 static int mentor_controller_init(usb_hcd_t*, uint32_t, char*);
 static int mentor_controller_start(usb_hcd_t*);
 static int mentor_controller_stop(usb_hcd_t*);
@@ -47,6 +89,8 @@ static int mentor_bulk_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uin
 static int mentor_int_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 static int mentor_int_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_int_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
+
+#endif
 
 static iousb_pipe_methods_t mentor_ctrl_pipe_methods =
 {
@@ -159,6 +203,10 @@ int mentor_slogf(hctrl_t* hc,
 /* complete */
 static int mentor_init(void* dll_hdl, dispatch_t* dpp, iousb_self_t* iousb_self, char* options)
 {
+#ifdef USE_ORIGINAL_DLL
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, "mentor_init");
+#endif
+
     mentor_iousb_self.self.hcd = iousb_self->self.hcd;
 
     return 0;
@@ -171,6 +219,7 @@ static int mentor_shutdown(void* dll_hdl)
     return 0;
 }
 
+#ifndef USE_ORIGINAL_DLL
 
 /* todo */
 static void* mentor_interrupt_thread(void* p)
@@ -5090,6 +5139,4 @@ static int mentor_ctrl_transfer(void* chdl,
     return 0;
 }
 
-
-
-
+#endif
