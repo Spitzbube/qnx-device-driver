@@ -1,5 +1,5 @@
 
-#define USE_ORIGINAL_DLL
+//#define USE_ORIGINAL_DLL
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -515,6 +515,173 @@ int MENTOR_HookED(hctrl_t* hc,
     }
 
     return 0;
+}
+
+
+/* complete */
+int MENTOR_InitializeEndpoint(hctrl_t* hc, 
+    /*struct USB_Controller_Inner_0x7c*/iousb_device_t* iousbdev, 
+    /*struct Struct_112b08*/iousb_endpoint_t* iousbep)
+{
+    struct Struct_0xa4* r1 = iousbep->user;
+    if (r1 == NULL)
+    {
+        r1 = MENTOR_GetEDPool(hc);
+        if (r1 == NULL)
+        {
+            mentor_slogf(hc, 12, 2, 1, "%s - No ED for Endpoint",
+                "devu-dm816x-mg.so");
+
+            return 12;
+        }
+        //637a
+        iousbep->user = r1;
+        r1->Data_0x34 = iousbep;
+        r1->num = -1;
+    }
+    //6384
+    r1->transferType = iousbep->edesc.bmAttributes & 0x03;
+    r1->mps = iousbep->edesc.wMaxPacketSize;
+    r1->bData_0x1b = iousbep->edesc.bEndpointAddress & ~0x7f;
+    r1->Data_0x20 = 0;
+    r1->Data_0x14 = ((iousbdev->device_address & 0x7f) << 4) | 
+            (iousbep->edesc.bEndpointAddress & 0x0f);
+
+    switch (iousbdev->device_speed & 0x03)
+    {
+        case IOUSB_DEVICE_FULL_SPEED:
+            r1->bData_0x1c = 0x80;
+            break;
+
+        case IOUSB_DEVICE_LOW_SPEED:
+            r1->bData_0x1c = 0xc0;
+            break;
+
+        case IOUSB_DEVICE_HIGH_SPEED:
+            r1->bData_0x1c = 0x40;
+            break;
+    }
+    //63c8
+    r1->Data_0x24 = iousbep->edesc.bInterval;
+
+    if ((r1->bData_0x1c != 0x40) && 
+        (NULL != hc->uhc->hcd_self->iousb_get_parent_device(iousbdev)))
+    {
+        iousb_device_t* parent;
+
+        while ((parent = hc->uhc->hcd_self->iousb_get_parent_device(iousbdev)) != NULL)
+        {
+            if (parent->device_speed == IOUSB_DEVICE_HIGH_SPEED)
+            {
+                break;
+            }
+
+            iousbdev = parent;
+        }
+
+        if (parent == NULL)
+        {
+            return -1;
+        }        
+        //63fc
+        r1->bData_0x1d = parent->device_address;
+        r1->bData_0x1e = iousbdev->device_port;
+    }
+    //6404
+    return 0;
+}
+
+
+/* complete */
+int mentor_ctrl_endpoint_enable(
+#if 0
+    struct USB_Controller* a, 
+    struct USB_Controller_Inner_0x7c* b, 
+    struct Struct_112b08* c)
+#else
+    void* chdl, 
+    iousb_device_t* iousbdev, 
+    iousb_endpoint_t* iousbep)
+#endif
+{
+#if 0
+    fprintf(stderr, "mentor_ctrl_endpoint_enable: a=%p, b=%p, c=%p\n",
+        a, b, c);
+#endif
+
+    hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
+    struct Struct_0xa4* r7 = iousbep->user;
+
+#if 0
+    mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
+        "mentor_ctrl_endpoint_enable: hc=%p, r7=%p\n",
+        hc, r7);
+#endif
+
+    int res = MENTOR_InitializeEndpoint(hc, iousbdev, iousbep);
+
+    if (res == 0)
+    {
+        if (r7 == NULL)
+        {
+            ((struct Struct_0xa4*)iousbep->user)->Data_0x24 = 0;
+
+            MENTOR_HookED(hc, hc->Data_0xc8, iousbep->user);
+        }
+    }
+
+    return res;
+}
+
+
+/* complete */
+int mentor_bulk_endpoint_enable(
+#if 0
+    struct USB_Controller* a, 
+    struct USB_Controller_Inner_0x7c* b, 
+    struct Struct_112b08* r6)
+#else
+    void* chdl, 
+    iousb_device_t* iousbdev, 
+    iousb_endpoint_t* iousbep)
+#endif
+{
+#if 0
+    fprintf(stderr, "mentor_bulk_endpoint_enable: a=%p, b=%p, r6=%p\n",
+        a, b, r6);
+#endif
+
+    hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
+    struct Struct_0xa4* r4 = iousbep->user;
+
+#if 0
+    mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
+        "mentor_bulk_endpoint_enable: hc=%p, r4=%p\n",
+        hc, r4);
+#endif
+
+    int res = MENTOR_InitializeEndpoint(hc, iousbdev, iousbep);
+
+    if ((res == 0) && (r4 == NULL))
+    {
+        r4 = iousbep->user;
+
+        MENTOR_HookED(hc, hc->Data_0xcc, r4);
+    }
+    else
+    {
+        if (r4 != NULL)
+        {
+            if (r4->num > 0)
+            {
+                MENTOR_FreeEtd(hc, r4);
+            }
+        }
+    }
+
+    r4->Data_0x24 = 0;
+
+    return res;
 }
 
 
