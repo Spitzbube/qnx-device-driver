@@ -1,6 +1,6 @@
 
-#define USE_ORIGINAL_DLL
-#define DEBUG_ED
+//#define USE_ORIGINAL_DLL
+//#define DEBUG_ED
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -10,9 +10,7 @@
 #include <atomic.h>
 #include <sys/mman.h>
 #include <sys/slog.h>
-#if 1//ndef USE_ORIGINAL_DLL
 #include "pci.h"
-#endif
 #include <sys/io-usb-otg.h>
 #include "mentor.h"
 
@@ -31,6 +29,8 @@ static int mentor_init(void*, dispatch_t*, iousb_self_t*, char*);
 static int mentor_shutdown(void*);
 static int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 static int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+
+extern const struct sigevent * mentor_interrupt_handler(void* a, int b);
 
 #ifdef USE_ORIGINAL_DLL
 extern void* mentor_interrupt_thread(void*);
@@ -225,14 +225,181 @@ static int mentor_shutdown(void* dll_hdl)
 /* todo */
 static void* mentor_interrupt_thread(void* p)
 {
+    usb_hcd_t* uhcd = p;
+    hctrl_t* r4 = uhcd->hc_data;
+    struct sched_param sp44;
+    int res;
 
+    res = pthread_setname_np(0, "mentor_pulse_handler");
+    if (res != 0)
+    {
+        //6f56
+        mentor_slogf(r4, 12, 2, 1, 
+            "%s - %s : pthread_setname_np() failed ( error = %d )",
+            "devu-dm816x-mg.so", 
+            "mentor_interrupt_thread",
+            res);
+    }
+    //6f78
+    res = ThreadCtl(14, 0);
+    if (res == -1)
+    {
+        mentor_slogf(r4, 12, 2, 1, 
+            "%s - %s: Unable to obtain I/O privity.",
+            "devu-dm816x-mg.so", 
+            "mentor_interrupt_thread");
+        //return (void*)res;
+        goto end;
+    }
+    //6fa8
+    res = pthread_getschedparam(pthread_self(), NULL, &sp44);
+    if (res != 0)
+    {
+        //6fb8
+        res = -1;
+
+        mentor_slogf(r4, 12, 2, 1, 
+            "%s - %s: Unable to get priority.",
+            "devu-dm816x-mg.so", 
+            "mentor_interrupt_thread");
+        //return (void*)res;
+        goto end;
+    }
+    //6fde
+    SIGEV_PULSE_INIT( &r4->intr_event, r4->Data_0x64/*coid*/, 
+        sp44.sched_priority, 1/*MUSB_PULSE_INTR*/, 0 );
+    //6ff8
+    while ((r4->flags & 0x10) == 0)
+    {
+        //loc_803c
+        delay(1);
+    }
+    //7006
+    r4->Data_0x68/*irq*/ = uhcd->hw_ctrl.pci_inf->Irq;
+
+    r4->Data_0x6c/*intr_id*/ = InterruptAttach(r4->Data_0x68/*irq*/, 
+        mentor_interrupt_handler, r4, 0x108, 8);
+    if (r4->Data_0x6c/*intr_id*/ == -1)
+    {
+        res = -1;
+
+        mentor_slogf(r4, 12, 2, 1, 
+            "%s - %s: InterruptAttach failed.",
+            "devu-dm816x-mg.so", 
+            "mentor_interrupt_thread");
+
+        //return (void*)-1;
+        goto end;
+    }
+    //loc_80e0
+    while (1)
+    {
+        //7050
+        struct _pulse pulse; //fp_0x30
+
+        if (MsgReceivePulse(r4->Data_0x60/*chid*/, &pulse, sizeof(pulse), 0) == -1)
+        {
+            break;
+        }
+        //0x0000811c
+        switch (pulse.code)
+        {
+            case 1:
+                //7072
+                mentor_bottom_half(r4);
+                break;
+
+            case 2:
+                pthread_exit(NULL);
+                break;
+
+            default:
+                //707a
+                mentor_slogf(r4, 12, 2, 1, 
+                    "%s - %s: Unknown pulse",
+                    "devu-dm816x-mg.so", 
+                    "mentor_interrupt_thread");
+                break;
+        }
+        //->loc_8100
+    } //while (1)
+
+    InterruptDetach(r4->Data_0x6c/*intr_id*/);
+
+end:
+    return (void*)res /*NULL*/;
 }
 
 
 /* todo */
 static void* mentor_error_pulse_handler(void* p)
 {
+    hctrl_t* hc = p;
+    int res;
+    struct _pulse pulse;
+    struct
+    {
+        int Data_0; //0
+        int fill_4[8]; //4
+        int Data_0x24; //36 = 0x24
+        void (*Data_0x28)(); //40 = 0x28
+    }* r1;
 
+    res = pthread_setname_np(0, "mentor_error_pulse_handler");
+    if (res != 0)
+    {
+        //4f68
+        mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
+            "%s: pthread_setname_np() failed ( error = %d )",
+            "mentor_error_pulse_handler",
+            res);
+
+    }
+    //4f84
+    while (1)
+    {
+        //4f8e
+        if (-1 == MsgReceivePulse(hc->Data_0x50, &pulse, sizeof(pulse), NULL))
+        {
+            if ((errno & ~0x100) != 4)
+            {
+                //->4fe8
+                break;
+            }
+            //->4f8e
+        }
+        else
+        {
+            //4fae
+            switch (pulse.code)
+            {
+                case 0:
+                    //4fbe
+                    r1 = pulse.value.sival_ptr;
+
+                    if ((r1 != NULL) && (r1->Data_0x28 != NULL))
+                    {
+                        (r1->Data_0x28)(0, r1, r1->Data_0, r1->Data_0x24);
+                    }
+                    break;
+
+                case 2:
+                    //4fb8
+                    pthread_exit(NULL);
+                    break;
+
+                default:
+                    //4fd6
+                    mentor_slogf(hc, 12, _SLOG_ERROR, 0, 
+                        "%s: Unknown pulse",
+                        "mentor_error_pulse_handler");
+                    //->4f8e
+                    break;
+            }
+        }
+    }
+    //4fe8
+    return NULL;
 }
 
 
@@ -1111,12 +1278,8 @@ int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
     pthread_attr_setschedparam(&sp_0x30/*r6*/, &sp_0x80);
     pthread_attr_setinheritsched(&sp_0x30/*r6*/, 2);
     //741a
-#if 0
     res = pthread_create(&hc->Data_0x4c, &sp_0x30/*r6*/, 
         mentor_error_pulse_handler, hc/*r4*/);
-#else
-    res = 0;
-#endif
     if (res != 0)
     {
         //742e
