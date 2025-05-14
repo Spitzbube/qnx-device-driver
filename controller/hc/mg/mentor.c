@@ -1,5 +1,6 @@
 
-//#define USE_ORIGINAL_DLL
+#define USE_ORIGINAL_DLL
+#define DEBUG_ED
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -9,7 +10,7 @@
 #include <atomic.h>
 #include <sys/mman.h>
 #include <sys/slog.h>
-#ifndef USE_ORIGINAL_DLL
+#if 1//ndef USE_ORIGINAL_DLL
 #include "pci.h"
 #endif
 #include <sys/io-usb-otg.h>
@@ -28,8 +29,12 @@ extern int mentor_slogf(hctrl_t* hc,
 
 static int mentor_init(void*, dispatch_t*, iousb_self_t*, char*);
 static int mentor_shutdown(void*);
+static int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+static int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 
 #ifdef USE_ORIGINAL_DLL
+extern void* mentor_interrupt_thread(void*);
+extern void* mentor_error_pulse_handler(void*);
 extern int mentor_controller_init(usb_hcd_t*, uint32_t, char*);
 extern int mentor_controller_start(usb_hcd_t*);
 extern int mentor_controller_stop(usb_hcd_t*);
@@ -42,7 +47,6 @@ extern int mentor_check_device_connected(usb_hcd_t*, uint32_t);
 extern int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
 extern int mentor_get_timer_from_controller(usb_hcd_t*);
 
-extern int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 extern int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
 extern int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 extern int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
@@ -52,7 +56,6 @@ extern int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
 extern int mentor_isoch_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 extern int mentor_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
-extern int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 extern int mentor_bulk_endpoint_disable(void*, iousb_endpoint_t*);
 extern int mentor_bulk_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 
@@ -72,7 +75,6 @@ static int mentor_check_device_connected(usb_hcd_t*, uint32_t);
 static int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
 static int mentor_get_timer_from_controller(usb_hcd_t*);
 
-static int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 static int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 static int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
@@ -82,7 +84,6 @@ static int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_isoch_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 static int mentor_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
-static int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 static int mentor_bulk_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_bulk_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 
@@ -414,13 +415,12 @@ void MENTOR_FreeED(hctrl_t* hc)
 }
 
 
+#endif //!USE_ORIGINAL_DLL
+
+
 /* complete */
 struct Struct_0xa4* MENTOR_GetEDPool(hctrl_t* hc)
 {
-#if 0
-    fprintf(stderr, "MENTOR_GetEDPool: TODO!!!\n");
-#endif
-
     struct Struct_0xa4* r4;
     struct Struct_0xa4* r6 = hc->Data_0xc4;
 
@@ -447,6 +447,12 @@ struct Struct_0xa4* MENTOR_GetEDPool(hctrl_t* hc)
     else
     {
         //54a6
+#ifdef DEBUG_ED
+        mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+            ">>>>>>>>>>>> MENTOR_GetEDPool: r6=%p, r4=%p",
+            r6, r4);
+#endif    
+
         r6->link.next = r4->link.next;
         r4->link.next->link.prev = r6;
         r4->Data_0x10 |= (1 << 31);
@@ -475,6 +481,12 @@ int MENTOR_BuildEDList(hctrl_t* hc, struct Struct_0xa4** b)
         return 12;
     }
 
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> MENTOR_BuildEDList: r3=%p",
+        r3);
+#endif
+
     *b = r3;
     r3->Data_0x10 |= (1 << 30) | (1 << 3);
     SIMPLEQ_INIT(&r3->Data_8);
@@ -500,6 +512,13 @@ int MENTOR_HookED(hctrl_t* hc,
     }
 
     r3 = r6->link.prev;
+
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> MENTOR_HookED: r6=%p, r4=%p, r3=%p",
+        r6, r4, r3);
+#endif
+
     r3->link.next = r4;
     r4->link.next = r6;
     r6->link.prev = r4;
@@ -524,6 +543,13 @@ int MENTOR_InitializeEndpoint(hctrl_t* hc,
     /*struct Struct_112b08*/iousb_endpoint_t* iousbep)
 {
     struct Struct_0xa4* r1 = iousbep->user;
+
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> MENTOR_InitializeEndpoint: r1=%p",
+        r1);
+#endif
+
     if (r1 == NULL)
     {
         r1 = MENTOR_GetEDPool(hc);
@@ -612,9 +638,9 @@ int mentor_ctrl_endpoint_enable(
     hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
     struct Struct_0xa4* r7 = iousbep->user;
 
-#if 0
-    mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
-        "mentor_ctrl_endpoint_enable: hc=%p, r7=%p\n",
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_ctrl_endpoint_enable: hc=%p, r7=%p",
         hc, r7);
 #endif
 
@@ -654,9 +680,9 @@ int mentor_bulk_endpoint_enable(
     hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
     struct Struct_0xa4* r4 = iousbep->user;
 
-#if 0
-    mentor_slogf(hc, 12, _SLOG_ERROR, 3, 
-        "mentor_bulk_endpoint_enable: hc=%p, r4=%p\n",
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_bulk_endpoint_enable: hc=%p, r4=%p",
         hc, r4);
 #endif
 
@@ -683,6 +709,8 @@ int mentor_bulk_endpoint_enable(
 
     return res;
 }
+
+#ifndef USE_ORIGINAL_DLL
 
 
 /* todo */
@@ -972,6 +1000,8 @@ int mentor_edma_shutdown(hctrl_t* hc)
 
 }
 
+#endif //!USE_ORIGINAL_DLL
+
 
 /* todo */
 static int mentor_create_completion_thread(usb_hcd_t* uhcd)
@@ -1081,8 +1111,12 @@ int mentor_create_error_pulse_thread(usb_hcd_t* uhcd)
     pthread_attr_setschedparam(&sp_0x30/*r6*/, &sp_0x80);
     pthread_attr_setinheritsched(&sp_0x30/*r6*/, 2);
     //741a
+#if 0
     res = pthread_create(&hc->Data_0x4c, &sp_0x30/*r6*/, 
         mentor_error_pulse_handler, hc/*r4*/);
+#else
+    res = 0;
+#endif
     if (res != 0)
     {
         //742e
@@ -1128,12 +1162,19 @@ int mentor_destroy_error_pulse_thread(usb_hcd_t* uhcd)
 }
 
 
-static int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
+
+int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
 {
     int res; //r5
     pthread_mutexattr_t mattr; //sp_0x18;
 
     hctrl_t* hc/*r4*/ = uhcd->hc_data;
+
+#if 1
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_controller_start: hc=%p",
+        hc);
+#endif
 
     pthread_mutexattr_init(&mattr);
     pthread_mutexattr_setrecursive(&mattr, 2);
@@ -1411,6 +1452,7 @@ success_781e:
     return res;
 }
 
+#ifndef USE_ORIGINAL_DLL
 
 /* complete */
 static int mentor_controller_stop(usb_hcd_t* uhcd)
