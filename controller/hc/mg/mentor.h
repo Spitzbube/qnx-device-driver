@@ -24,9 +24,28 @@
 
 #include <queue.h>
 
+#define MUSB_LOCK InterruptLock(&(hc->Data_0xe4));
+#define MUSB_UNLOCK InterruptUnlock(&(hc->Data_0xe4));
+
+#define MUSB_MUTEX_LOCK(mutex, line) 	if( pthread_mutex_lock( &hc->mutex ) ) { \
+    fprintf(stderr, "mutex lock %s %d\n", \
+        "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c", \
+        line); }
+        
+#define MUSB_MUTEX_UNLOCK(mutex, line) 	if( pthread_mutex_unlock( &hc->mutex ) ) { \
+    fprintf(stderr, "mutex lock %s %d\n", \
+        "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c", \
+        line); }
+
+
 typedef struct _hctrl_t hctrl_t;
 
 #define HC_FLAG_USE_DMA           ( 1 << 0 )
+
+
+// EP FIFOs
+#define FIFO(n) 					( 0x20 + ( (n) * 4) )	// 8,16,32 bit access
+
 
 // Target Address Registers
 #define MUSB_TXFUNCADDR(n)			( 0x80 + ( (n) * 8 ) )	// 8-bit
@@ -243,8 +262,10 @@ struct _hctrl_t {
     int* Data_0xd8; //0xd8
     void* Data_0xdc; //0xdc
     int fill_0xe0; //0xe0
-    int Data_0xe4; //0xe4
-    int fill_0xe8[3]; //0xe8
+    intrspin_t Data_0xe4; //0xe4
+    uint16_t fill_0xe8; //0xe8
+    uint16_t wData_0xea; //0xea
+    int fill_0xec[2]; //0xec
     void* args_copy; //0xf4
     int fill_0xf8; //0xf8
     void* Data_0xfc; //0xfc

@@ -1,6 +1,8 @@
 
-//#define USE_ORIGINAL_DLL
-//#define DEBUG_ED
+#define USE_ORIGINAL_DLL
+#define DEBUG_ED
+#define DEBUG_INTERRUPT_THREAD
+#define DEBUG_CTRL_TRANSFER
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -13,6 +15,7 @@
 #include "pci.h"
 #include <sys/io-usb-otg.h>
 #include "mentor.h"
+
 
 #ifndef USE_ORIGINAL_DLL
 /*static*/ iousb_self_t mentor_iousb_self;
@@ -29,12 +32,15 @@ static int mentor_init(void*, dispatch_t*, iousb_self_t*, char*);
 static int mentor_shutdown(void*);
 static int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 static int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+static void* mentor_interrupt_thread(void*);
+static void* mentor_error_pulse_handler(void*);
+void mentor_bottom_half(hctrl_t*);
+static int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
+static int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
 extern const struct sigevent * mentor_interrupt_handler(void* a, int b);
 
 #ifdef USE_ORIGINAL_DLL
-extern void* mentor_interrupt_thread(void*);
-extern void* mentor_error_pulse_handler(void*);
 extern int mentor_controller_init(usb_hcd_t*, uint32_t, char*);
 extern int mentor_controller_start(usb_hcd_t*);
 extern int mentor_controller_stop(usb_hcd_t*);
@@ -48,8 +54,6 @@ extern int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
 extern int mentor_get_timer_from_controller(usb_hcd_t*);
 
 extern int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
-extern int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
-extern int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
 extern int mentor_isoch_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 extern int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
@@ -76,8 +80,6 @@ static int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
 static int mentor_get_timer_from_controller(usb_hcd_t*);
 
 static int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
-static int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
-static int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
 static int mentor_isoch_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
 static int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
@@ -220,7 +222,6 @@ static int mentor_shutdown(void* dll_hdl)
     return 0;
 }
 
-#ifndef USE_ORIGINAL_DLL
 
 /* todo */
 static void* mentor_interrupt_thread(void* p)
@@ -301,7 +302,13 @@ static void* mentor_interrupt_thread(void* p)
         {
             break;
         }
-        //0x0000811c
+        
+#ifdef DEBUG_INTERRUPT_THREAD
+        mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+            ">>>>>>>>>>>> mentor_interrupt_thread: pulse.code=%d",
+            pulse.code);
+#endif    
+        
         switch (pulse.code)
         {
             case 1:
@@ -353,7 +360,6 @@ static void* mentor_error_pulse_handler(void* p)
             "%s: pthread_setname_np() failed ( error = %d )",
             "mentor_error_pulse_handler",
             res);
-
     }
     //4f84
     while (1)
@@ -401,6 +407,9 @@ static void* mentor_error_pulse_handler(void* p)
     //4fe8
     return NULL;
 }
+
+
+#ifndef USE_ORIGINAL_DLL
 
 
 /* todo */
@@ -468,7 +477,7 @@ int MENTOR_ProcessInComplete(hctrl_t* hc/*r5*/,
                     ((td = r6->Data_8.sqh_first) != NULL))
                 {
                     //479e
-                    InterruptUnlock(&hc->Data_0xe4);
+                    MUSB_UNLOCK
                     //->47c8
                     MENTOR_StartEtd(hc, td);
                 }
@@ -484,7 +493,7 @@ int MENTOR_ProcessInComplete(hctrl_t* hc/*r5*/,
 
                     }
                     //47c0
-                    InterruptUnlock(&hc->Data_0xe4);
+                    MUSB_UNLOCK
                 }
             }
             else
@@ -591,23 +600,13 @@ struct Struct_0xa4* MENTOR_GetEDPool(hctrl_t* hc)
     struct Struct_0xa4* r4;
     struct Struct_0xa4* r6 = hc->Data_0xc4;
 
-    if (pthread_mutex_lock(&hc->Data_4) != 0)
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x133);
-    }
+    MUSB_MUTEX_LOCK(Data_4, 0x133);
     //547c
     r4 = r6->link.next;
     if (r4 == r6)
     {
         //5482
-        if (pthread_mutex_unlock(&hc->Data_4) != 0)
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x136);
-        }
+        MUSB_MUTEX_UNLOCK(Data_4, 0x136);
 
         r4 = NULL;
     }
@@ -625,12 +624,7 @@ struct Struct_0xa4* MENTOR_GetEDPool(hctrl_t* hc)
         r4->Data_0x10 |= (1 << 31);
         r4->Data_0x38 = 0;
 
-        if (pthread_mutex_unlock(&hc->Data_4) != 0)
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x141);
-        }
+        MUSB_MUTEX_UNLOCK(Data_4, 0x141);
     }
     //loc_5428
     return r4;
@@ -671,12 +665,7 @@ int MENTOR_HookED(hctrl_t* hc,
 {
     struct Struct_0xa4* r3;
 
-    if (pthread_mutex_lock(&hc->Data_4) != 0)
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x335);
-    }
+    MUSB_MUTEX_LOCK(Data_4, 0x335);
 
     r3 = r6->link.prev;
 
@@ -693,12 +682,7 @@ int MENTOR_HookED(hctrl_t* hc,
 
     SIMPLEQ_INIT(&r4->Data_8);
 
-    if (pthread_mutex_unlock(&hc->Data_4) != 0)
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x340);
-    }
+    MUSB_MUTEX_UNLOCK(Data_4, 0x340);
 
     return 0;
 }
@@ -1722,6 +1706,7 @@ static int mentor_get_root_device_speed(usb_hcd_t* uhcd, uint32_t port)
 
 }
 
+#endif //!USE_ORIGINAL_DLL
 
 
 
@@ -2631,2331 +2616,754 @@ static int mentor_get_root_device_speed(usb_hcd_t* uhcd, uint32_t port)
 
 
 
+/* todo */
+void mentor_bottom_half(hctrl_t* hc)
+{
+    struct _musb_transfer* td;
 
+    while (1)
+    {
+        //6e80
+        MUSB_LOCK
 
+        td = SIMPLEQ_FIRST(&hc->transfer_complete_q);
+        if (td == NULL)
+        {
+            //->6f0c
+            break;
+        }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#if 0 //def DEBUG_INTERRUPT_THREAD
+        mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+            ">>>>>>>>>>>> mentor_bottom_half: td=%p",
+            td);
 #endif
+
+        SIMPLEQ_REMOVE_HEAD(&hc->transfer_complete_q, link);
+
+        MUSB_UNLOCK
+
+        MUSB_MUTEX_LOCK(Data_4, 0xa55);
+        //6ec6
+        if (((td->flags & 0xff0000) != 0) &&
+            (hc->Data_0x100 != NULL))
+        {
+            (hc->Data_0x100)(hc, td);
+        }
+        else
+        {
+            //6edc
+            MENTOR_URB_complete(hc, 
+                td->Data_0x30, 
+                td, 
+                td->Data_0x30->transferType,
+                td->status);
+        }
+        //6eec
+        MUSB_MUTEX_UNLOCK(Data_4, 0xa5c);
+        //->6e80
+    } //while (1)
+    //6f0c
+    hc->wData_0xea = 0;
+
+    MUSB_UNLOCK
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5207,7 +3615,41 @@ int mentor_controller_init(usb_hcd_t* uhcd/*r5*/,
     return 0;
 }
 
-#ifndef USE_ORIGINAL_DLL
+
+
+/* complete */
+void MENTOR_LoadFIFO(hctrl_t* hc, uint16_t b, int c, uint16_t r8)
+{
+    uint16_t r6 = c + r8;
+    uint32_t* r5 = c;
+
+    while (1)
+    {
+        uint16_t r4 = (int)r6 - (int)r5;
+        if (r4 < 4)
+        {
+            break;
+        }
+
+        *((volatile uint32_t*)(hc->Data_0x14 + 0x20 + b * 4)) = *r5++;
+    }
+
+    int r6_ = (r8 >> 2) * 0x3fff;
+    int r5_ = c + ((r8 >> 2) << 2);
+    uint16_t r3 = r8  + (r6_ << 2);
+    if (r3 & 0x02)
+    {
+        *((volatile uint16_t*)(hc->Data_0x14 + 0x20 + b*4)) = *((volatile uint16_t*)r5_);
+        r5_ += 2;
+    }
+
+    if (r3 & 0x01)
+    {
+        *((volatile uint8_t*)(hc->Data_0x14 + 0x20 + b*4)) = *((volatile uint8_t*)r5_);
+    }
+}
+
+
 
 /* complete */
 struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc, 
@@ -5217,14 +3659,14 @@ struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc,
 {
     struct _musb_transfer* td;
 
-    InterruptLock(&hc->Data_0xe4);
+    MUSB_LOCK
 
     td = SIMPLEQ_FIRST(&hc->transfer_free_q);
     if (td == NULL)
     {
         urb->status = 0x2000010;
 
-        InterruptUnlock(&hc->Data_0xe4);
+        MUSB_UNLOCK
 
         mentor_slogf(hc, 12, _SLOG_ERROR, 1, 
             "%s - No TD's available",
@@ -5234,7 +3676,7 @@ struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc,
     {
         SIMPLEQ_REMOVE_HEAD(&hc->transfer_free_q, link);
 
-        InterruptUnlock(&hc->Data_0xe4);
+        MUSB_UNLOCK
 
         td->flags = flags & 0x8000003f;
         td->bytes_xfered = 0;
@@ -5244,13 +3686,6 @@ struct _musb_transfer* MENTOR_TD_Setup(hctrl_t* hc,
     }
 
     return td;
-}
-
-
-/* todo */
-int MENTOR_LoadFIFO(hctrl_t* hc, int b, int c, uint16_t d)
-{
-
 }
 
 
@@ -5341,7 +3776,7 @@ void MENTOR_StartControlEtd(hctrl_t* hc/*r6*/, struct _musb_transfer* td)
 
 
 /* complete */
-static int mentor_ctrl_transfer_abort(void* chdl, 
+int mentor_ctrl_transfer_abort(void* chdl, 
     iousb_transfer_t* urb, 
     iousb_endpoint_t* iousbep)
 {
@@ -5349,31 +3784,16 @@ static int mentor_ctrl_transfer_abort(void* chdl,
     struct Struct_0xa4* r5;
     struct _musb_transfer* r4;
 
-    if (0 != pthread_mutex_lock(&hc->Data_4/*r8*/))
+    MUSB_MUTEX_LOCK(Data_4, 0x435);
+    if ((r5 = iousbep->user) == NULL)
     {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x435);
-    }
-    //4620
-    r5 = iousbep->user;
-    if (r5 == NULL)
-    {
-        //4624
-        if (0 != pthread_mutex_unlock(&hc->Data_4/*r8*/))
-        {
-            //462e
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x438);
-        }
-        //->46b8
+        MUSB_MUTEX_UNLOCK(Data_4, 0x438);
         return 2;
     }
     //4648
     HW_Write16(hc, MUSB_CSR0, CSR0_FLUSH_FIFO);
 
-    InterruptLock(&hc->Data_0xe4/*r9*/);
+    MUSB_LOCK
 
     while ((r4 = r5->Data_8.sqh_first) != NULL)
     {
@@ -5388,26 +3808,20 @@ static int mentor_ctrl_transfer_abort(void* chdl,
         SIMPLEQ_INSERT_TAIL(&hc->transfer_free_q, r4, link);
     }
     //4680
-    InterruptUnlock(&hc->Data_0xe4/*r9*/);
+    MUSB_UNLOCK
 
     hc->Data_0xd8[0] = 0;
 
     r5->Data_0x10 &= ~(1 << 0);
 
-    if (0 != pthread_mutex_unlock(&hc->Data_4/*r8*/))
-    {
-        //469c
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x449);
-    }
+    MUSB_MUTEX_UNLOCK(Data_4, 0x449);
     //46ba
     return 0;
 }
 
 
-/* todo */
-static int mentor_ctrl_transfer(void* chdl, 
+/* complete */
+int mentor_ctrl_transfer(void* chdl, 
     iousb_transfer_t* urb/*sl*/, 
     iousb_endpoint_t* iousbep, 
     uint8_t* buffer/*fp*/, 
@@ -5418,59 +3832,26 @@ static int mentor_ctrl_transfer(void* chdl,
     struct Struct_0xa4* r6 = iousbep->user;
     struct _musb_transfer* td; //r7;
 
-    if (0 != pthread_mutex_lock(&hc->Data_0xc/*r8*/))
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x517);
-    }
-    //4ce8
-    if (0 != pthread_mutex_lock(&hc->Data_4/*r9*/))
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x518);
-    }
+#ifdef DEBUG_CTRL_TRANSFER
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_ctrl_transfer: length=%d",
+        length);
+#endif
+
+    MUSB_MUTEX_LOCK(Data_0xc, 0x517);
+    MUSB_MUTEX_LOCK(Data_4, 0x518);
     //4d0c
     if ((hc->Data_0x8c & 0x06) != 0x06)
     {
-        //4d18
-        if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x51b);
-        }
-        //4d38
-        if (0 != pthread_mutex_unlock(&hc->Data_0xc/*r8*/))
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x51c);
-        }
-        //4d58
+        MUSB_MUTEX_UNLOCK(Data_4, 0x51b);
+        MUSB_MUTEX_UNLOCK(Data_0xc, 0x51c);
         urb->status = 0x2000005;
-
         return 0x13;
     }
     //4d62
-    td = MENTOR_TD_Setup(hc, urb, r6, flags);
-    if (td == NULL)
-    {
-        //4d72
-        if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x522);
-        }
-        //4d92
-        if (0 != pthread_mutex_unlock(&hc->Data_0xc/*r8*/))
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-                0x523);
-        }
+    if ((td = MENTOR_TD_Setup(hc, urb, r6, flags)) == NULL) {
+        MUSB_MUTEX_UNLOCK(Data_4, 0x522);
+        MUSB_MUTEX_UNLOCK(Data_0xc, 0x523);
         //4db2
         urb->status = 0x2000010;
 
@@ -5480,7 +3861,7 @@ static int mentor_ctrl_transfer(void* chdl,
     td->xfer_buffer = buffer;
     td->xfer_length = length;
 
-    InterruptLock(&hc->Data_0xe4/*sl*/);
+    MUSB_LOCK
 
     SIMPLEQ_INSERT_TAIL(&r6->Data_8, td, link);
 
@@ -5492,7 +3873,7 @@ static int mentor_ctrl_transfer(void* chdl,
 
         hc->Data_0xd8[0] = td;
 
-        InterruptUnlock(&hc->Data_0xe4/*sl*/);
+        MUSB_UNLOCK
 
         MENTOR_StartControlEtd(hc, SIMPLEQ_FIRST(&r6->Data_8));
         //->4e08
@@ -5500,24 +3881,13 @@ static int mentor_ctrl_transfer(void* chdl,
     else
     {
         //4e02
-        InterruptUnlock(&hc->Data_0xe4/*sl*/);
+        MUSB_UNLOCK
     }
     //4e08
-    if (0 != pthread_mutex_unlock(&hc->Data_4/*r9*/))
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x538);
-    }
+    MUSB_MUTEX_UNLOCK(Data_4, 0x538);
     //4e28
-    if (0 != pthread_mutex_unlock(&hc->Data_0xc/*r8*/))
-    {
-        fprintf(stderr, "mutex lock %s %d\n",
-            "/builds/workspace/sdp700/build_armv7/hardware/devu/controller/hc/mg/mentor.c",
-            0x53a);
-    }
+    MUSB_MUTEX_UNLOCK(Data_0xc, 0x53a);
     //4e4a
     return 0;
 }
 
-#endif
