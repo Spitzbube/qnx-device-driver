@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <atomic.h>
 #include <sys/mman.h>
+#include <sys/rsrcdbmgr.h>
 #include <sys/slog.h>
 #include "pci.h"
 #include <sys/io-usb-otg.h>
@@ -31,7 +32,11 @@ extern int mentor_slogf(hctrl_t* hc,
 static int mentor_init(void*, dispatch_t*, iousb_self_t*, char*);
 static int mentor_shutdown(void*);
 static int mentor_ctrl_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+static int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_bulk_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
+static int mentor_bulk_endpoint_disable(void*, iousb_endpoint_t*);
+static int mentor_int_endpoint_disable(void*, iousb_endpoint_t*);
+static int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
 static void* mentor_interrupt_thread(void*);
 static void* mentor_error_pulse_handler(void*);
 void mentor_bottom_half(hctrl_t*);
@@ -53,18 +58,13 @@ extern int mentor_check_device_connected(usb_hcd_t*, uint32_t);
 extern int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
 extern int mentor_get_timer_from_controller(usb_hcd_t*);
 
-extern int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
-
 extern int mentor_isoch_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
-extern int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
 extern int mentor_isoch_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 extern int mentor_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
-extern int mentor_bulk_endpoint_disable(void*, iousb_endpoint_t*);
 extern int mentor_bulk_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 
 extern int mentor_int_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
-extern int mentor_int_endpoint_disable(void*, iousb_endpoint_t*);
 extern int mentor_int_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 #else
 static int mentor_controller_init(usb_hcd_t*, uint32_t, char*);
@@ -79,18 +79,13 @@ static int mentor_check_device_connected(usb_hcd_t*, uint32_t);
 static int mentor_get_root_device_speed(usb_hcd_t*, uint32_t);
 static int mentor_get_timer_from_controller(usb_hcd_t*);
 
-static int mentor_ctrl_endpoint_disable(void*, iousb_endpoint_t*);
-
 static int mentor_isoch_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
-static int mentor_isoch_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_isoch_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 static int mentor_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
-static int mentor_bulk_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_bulk_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 
 static int mentor_int_endpoint_enable(void*, iousb_device_t*, iousb_endpoint_t*);
-static int mentor_int_endpoint_disable(void*, iousb_endpoint_t*);
 static int mentor_int_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 
 #endif
@@ -542,6 +537,143 @@ void MENTOR_FreeTD(hctrl_t* hc)
     free(hc->transfer_mem);
 }
 
+#endif //!USE_ORIGINAL_DLL
+
+
+/* complete */
+void mentor_free_dma_sched()
+{
+}
+
+
+/* complete */
+int mentor_free_dma_channel()
+{
+    return 0;
+}
+
+
+/* todo */
+void edma3_transfer_done(struct _hctrl_t_Inner_0x28* a, int b)
+{
+
+}
+
+
+/* complete */
+static void edma_detach_channel(struct _hctrl_t_Inner_0x28_Inner0* a, int b)
+{
+    struct _hctrl_t_Inner_0x28_Inner0* r4 = &a[b];
+
+    if (r4->Data_4 != -1)
+    {
+        rsrc_request_t sp = {0};
+
+        sp.length = 1;
+        sp.flags = 0x03;
+        sp.start = sp.end = r4->Data_4;
+
+        rsrcdbmgr_detach(&sp, 1);
+
+        r4->Data_4 = -1;
+    }
+
+    if (r4->Data_12 != -1)
+    {
+        InterruptDetach(r4->Data_12);
+
+        r4->Data_12 = -1;
+    }
+}
+
+
+/* complete */
+int mentor_edma_shutdown(hctrl_t* hc)
+{
+    struct _hctrl_t_Inner_0x28* r4 = hc->Data_0x28;
+    int i;
+
+    for (i = 1; i < r4->Data_8; i++)
+    {
+        int r1 = r4->Data_0[i].Data_4;
+        if (r1 != -1)
+        {
+            edma3_transfer_done(r4, r1);
+            edma_detach_channel(r4->Data_0, i);
+        }
+    }
+
+    munmap_device_memory(r4->Data_12, 0x5000);
+    free(r4->Data_0);
+    free(r4);
+
+    return 0;
+}
+
+
+/* complete */
+void mentor_edma_free_channel(hctrl_t* hc, int r5)
+{
+    struct _hctrl_t_Inner_0x28* r4 = hc->Data_0x28;
+
+    if ((r5 > 0) && (r5 < r4->Data_8))
+    {
+        int r1 = r4->Data_0[r5].Data_4;
+        if (r1 != -1)
+        {
+            edma3_transfer_done(r4, r1);
+            edma_detach_channel(r4->Data_0, r5);
+        }
+    }
+}
+
+
+/* complete */
+int MENTOR_FreeEtd(hctrl_t* hc, struct Struct_0xa4* r4)
+{
+    int r5 = r4->num;
+
+    if (r4->Data_0x30 != NULL)
+    {
+        mentor_fifo_free(hc, r4->Data_0x30);
+    }
+
+    r4->Data_0x30 = NULL;
+
+    if (r4->Data_0x38 != 0)
+    {
+        mentor_free_dma_sched(hc, r4->Data_0x38);
+
+        r4->Data_0x38 = 0;
+    }
+
+    if (r4->Data_0x2c != -1)
+    {
+        mentor_free_dma_channel(hc, r4->Data_0x2c);
+
+        r4->Data_0x2c = -1;
+    }
+
+    if ((r5 > 0) && (r5 < hc->Data_0x1c))
+    {
+        if (hc->flags & (1 << 12))
+        {
+            mentor_edma_free_channel(hc, r4->num);
+        }
+
+        r4->num = -1;
+        r4->Data_0x2c = -1;
+
+        hc->Data_0xdc[r5] = NULL;
+    }
+    else
+    {
+        return -1;
+    }
+
+    return r5;
+}
+
 
 /* complete */
 int MENTOR_AllocateED(hctrl_t* hc)
@@ -556,6 +688,12 @@ int MENTOR_AllocateED(hctrl_t* hc)
     }
 
     hc->Data_0xc0 = r4;
+
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> MENTOR_AllocateED: r4=%p, num_ed=%d",
+        r4, hc->num_ed);
+#endif    
 
     memset(r4, 0, (hc->num_ed + 1) * sizeof(struct Struct_0xa4));
 
@@ -589,9 +727,6 @@ void MENTOR_FreeED(hctrl_t* hc)
 {
     free(hc->Data_0xc0);
 }
-
-
-#endif //!USE_ORIGINAL_DLL
 
 
 /* complete */
@@ -683,6 +818,30 @@ int MENTOR_HookED(hctrl_t* hc,
     SIMPLEQ_INIT(&r4->Data_8);
 
     MUSB_MUTEX_UNLOCK(Data_4, 0x340);
+
+    return 0;
+}
+
+
+/* complete */
+int MENTOR_UnHookED(hctrl_t* hc, struct Struct_0xa4* r4)
+{
+    struct Struct_0xa4* r3;
+
+    if (r4 != NULL)
+    {
+        MUSB_MUTEX_LOCK(Data_4, 0x34d);
+
+        MENTOR_FreeEtd(hc, r4);
+
+        r3 = r4->link.prev;
+        r3->link.next = r4->link.next;
+        r4->link.next->link.prev = r3;
+    
+        MUSB_MUTEX_LOCK(Data_4, 0x356);
+
+        MENTOR_PutEDPool(hc, r4);
+    }
 
     return 0;
 }
@@ -809,6 +968,55 @@ int mentor_ctrl_endpoint_enable(
 
     return res;
 }
+
+
+int mentor_ctrl_endpoint_disable(void* chdl, iousb_endpoint_t* iousbep)
+{
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_ctrl_endpoint_disable: iousbep=%p",
+        iousbep);
+#endif
+    return mentor_isoch_endpoint_disable(chdl, iousbep);
+}
+
+
+int mentor_bulk_endpoint_disable(void* chdl, iousb_endpoint_t* iousbep)
+{
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_bulk_endpoint_disable: iousbep=%p",
+        iousbep);
+#endif
+    return mentor_isoch_endpoint_disable(chdl, iousbep);
+}
+
+
+int mentor_int_endpoint_disable(void* chdl, iousb_endpoint_t* iousbep)
+{
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_int_endpoint_disable: iousbep=%p",
+        iousbep);
+#endif
+    return mentor_isoch_endpoint_disable(chdl, iousbep);
+}
+
+
+int mentor_isoch_endpoint_disable(void* chdl, iousb_endpoint_t* iousbep)
+{
+    hctrl_t* hc = ((struct _usb_hcd*)chdl)->hc_data;
+    struct Struct_0xa4* r1 = iousbep->user;
+
+#ifdef DEBUG_ED
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_isoch_endpoint_disable: r1=%p",
+        r1);
+#endif
+
+    return MENTOR_UnHookED(hc, r1);
+}
+
 
 
 /* complete */
@@ -1364,63 +1572,7 @@ int mentor_controller_start(usb_hcd_t* uhcd/*r7*/)
     //755a
     hc->Data_0x18 = (uint32_t) uhcd->hw_ctrl.pci_inf->CpuBaseAddress[0];
 
-#if 1
     res = mentor_create_completion_thread(uhcd);
-#else
-    hctrl_t* r6 = uhcd->hc_data;
-    pthread_attr_t sp_0x60;
-    struct sched_param sp_0x176;
-
-    int r5;
-    r6->Data_0x60 = ChannelCreate(8);
-    if (r6->Data_0x60 < 0)
-    {
-        //7570
-        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r5*/, 
-            "%s : %s - Unable to create channel",
-            "devu-hcd-dm816x-mg.so", 
-            "mentor_create_completion_thread");
-        r5 = r6->Data_0x60;
-        //->763e: TODO!!!
-    }
-    //7596
-    r6->Data_0x64 = ConnectAttach(0, 0, r6->Data_0x60, 
-        0x40000000, 0);
-    if (r6->Data_0x64 < 0)
-    {
-        //75aa
-        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r5*/, 
-            "%s : %s - Unable to connect to channel",
-            "devu-hcd-dm816x-mg.so", 
-            "mentor_create_completion_thread");
-        r5 = r6->Data_0x64;
-        //->7638:
-        goto error_7638;
-    }
-    //75d0
-    pthread_attr_init(&sp_0x60/*r5*/);
-    pthread_attr_setschedpolicy(&sp_0x60/*r5*/, 2);
-    sp_0x176.sched_priority = r6->prio;
-    pthread_attr_setschedparam(&sp_0x60/*r5*/, &sp_0x176);
-    pthread_attr_setinheritsched(&sp_0x60/*r5*/, 2);
-
-    r5 = pthread_create(&r6->Data_0x5c, NULL, 
-        mentor_interrupt_thread, uhcd/*r7*/);
-    if (r5 != 0)
-    {
-        //7610
-        mentor_slogf(r6, 12, _SLOG_ERROR, 0/*r8*/, 
-            "%s : %s - Unable to create interrupt thread",
-            "devu-hcd-dm816x-mg.so", 
-            "mentor_create_completion_thread");
-
-        ConnectDetach(r6->Data_0x64);
-error_7638:
-        ChannelDestroy(r6->Data_0x60);
-error_763e:
-            ;
-    }
-#endif
     //763e
     if (res != 0)
     {

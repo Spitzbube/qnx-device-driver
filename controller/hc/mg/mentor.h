@@ -214,14 +214,32 @@ struct Struct_0xa4
 };
 
 
+struct _hctrl_t_Inner_0x28
+{
+    struct _hctrl_t_Inner_0x28_Inner0
+    {
+        int fill_0; //0
+        int Data_4; //4
+        int fill_8; //8
+        int Data_12; //12
+        int fill_16[3]; //0x10
+        //0x1c???
+    }* Data_0; //0
+    int fill_4; //4
+    int Data_8; //8
+    int Data_12; //12
+    //???
+};
+
 struct _hctrl_t {
     usb_hcd_t* uhc; //0
     pthread_mutex_t Data_4; //4
     pthread_mutex_t Data_0xc; //12
     int Data_0x14; //0x14
     uint32_t Data_0x18; //0x18 = 24
-    int Data_0x1c; //0x1c
-    int fill_0x20[3]; //0x20
+    uint32_t Data_0x1c; //0x1c
+    int fill_0x20[2]; //0x20
+    struct _hctrl_t_Inner_0x28* Data_0x28; //0x28
     int Data_0x2c; //0x2c
     int num_dma; //0x30
     int dirq; //0x34
@@ -260,7 +278,7 @@ struct _hctrl_t {
     struct Struct_0xa4* Data_0xd0; //0xd0
     struct Struct_0xa4* Data_0xd4; //0xd4
     int* Data_0xd8; //0xd8
-    void* Data_0xdc; //0xdc
+    void** Data_0xdc; //0xdc
     int fill_0xe0; //0xe0
     intrspin_t Data_0xe4; //0xe4
     uint16_t fill_0xe8; //0xe8
