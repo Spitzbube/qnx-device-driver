@@ -20,19 +20,36 @@
  */
 
 #include "proto.h"
+#include "context_restore.h"
 
 void
 omap_fini(void *hdl)
 {
     omap_dev_t  *dev = hdl;
 
+    omap_clock_enable(dev);
     out16(dev->regbase + OMAP_I2C_CON, 0);
     out16(dev->regbase + OMAP_I2C_IE, 0);
+    omap_clock_disable(dev);
 	InterruptDetach(dev->iid);
 	ConnectDetach(dev->coid);
 	ChannelDestroy(dev->chid);
+
+	if (dev->clkctrl_base) {
+		munmap_device_io (dev->clkctrl_base, 4);
+	}
+
+	if (dev->clkstctrl_base) {
+		munmap_device_io (dev->clkstctrl_base, 4);
+	}
+
+	context_restore_fini(dev);
+
 	munmap_device_io (dev->regbase, dev->reglen);
 	free (hdl);
 }
 
-__SRCVERSION( "$URL: http://svn/product/tags/internal/bsp/nto650/ti-j5-evm/1.0.0/latest/hardware/i2c/omap35xx/fini.c $ $Rev: 222214 $" );
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/fini.c $ $Rev: 680332 $")
+#endif

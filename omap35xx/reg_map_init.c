@@ -1,6 +1,6 @@
 /*
  * $QNXLicenseC:
- * Copyright 2009, QNX Software Systems.
+ * Copyright 2011, QNX Software Systems.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You
  * may not reproduce, modify or distribute this software except in
@@ -22,15 +22,12 @@
 #include "proto.h"
 
 int
-omap_version_info(i2c_libversion_t *version)
+omap_reg_map_init(omap_dev_t* dev)
 {
-    version->major = I2CLIB_VERSION_MAJOR;
-    version->minor = I2CLIB_VERSION_MINOR;
-    version->revision = I2CLIB_REVISION;
-    return 0;
+	return EOK;
 }
 
 #if defined(__QNXNTO__) && defined(__USESRCVERSION)
 #include <sys/srcversion.h>
-__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/version.c $ $Rev: 680332 $")
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/reg_map_init.c $ $Rev: 680332 $")
 #endif

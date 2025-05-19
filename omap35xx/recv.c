@@ -38,7 +38,14 @@ omap_recv(void *hdl, void *buf, unsigned int len, unsigned int stop)
 	dev->status = 0;
 	dev->intexpected = 1;
 
+	omap_clock_enable(dev);
+
     /* set slave address */
+    if (dev->slave_addr_fmt == I2C_ADDRFMT_7BIT)
+        out16(dev->regbase + OMAP_I2C_CON, in16(dev->regbase + OMAP_I2C_CON) & (~OMAP_I2C_CON_XSA));
+    else
+        out16(dev->regbase + OMAP_I2C_CON, in16(dev->regbase + OMAP_I2C_CON) | OMAP_I2C_CON_XSA);
+
     out16(dev->regbase + OMAP_I2C_SA, dev->slave_addr);
 
     /* set data count */
@@ -48,16 +55,21 @@ omap_recv(void *hdl, void *buf, unsigned int len, unsigned int stop)
 	out16(dev->regbase + OMAP_I2C_BUF, in16(dev->regbase + OMAP_I2C_BUF)| OMAP_I2C_BUF_RXFIF_CLR | OMAP_I2C_BUF_TXFIF_CLR);
 
     /* set start condition */
-    out16(dev->regbase + OMAP_I2C_CON, 
-          OMAP_I2C_CON_EN |
-          OMAP_I2C_CON_MST |
-          OMAP_I2C_CON_STT |
-          (stop? OMAP_I2C_CON_STP : 0)|
-          (in16(dev->regbase + OMAP_I2C_CON)&OMAP_I2C_CON_XA));
-	
-	ret=  omap_wait_status(dev);
+    out16(dev->regbase + OMAP_I2C_CON,
+            OMAP_I2C_CON_EN  |
+            OMAP_I2C_CON_MST |
+            OMAP_I2C_CON_STT |
+            (stop? OMAP_I2C_CON_STP : 0) |
+            (in16(dev->regbase + OMAP_I2C_CON)&OMAP_I2C_CON_XA));
+
+    ret=  omap_wait_status(dev);
+
+	omap_clock_disable(dev);
 
     return ret;
 }
 
-__SRCVERSION( "$URL: http://svn/product/tags/internal/bsp/nto650/ti-j5-evm/1.0.0/latest/hardware/i2c/omap35xx/recv.c $ $Rev: 222214 $" );
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/recv.c $ $Rev: 698026 $")
+#endif

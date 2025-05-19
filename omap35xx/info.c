@@ -31,4 +31,7 @@ omap_driver_info(void *hdl, i2c_driver_info_t *info)
     return 0;
 }
 
-__SRCVERSION( "$URL: http://svn/product/tags/internal/bsp/nto650/ti-j5-evm/1.0.0/latest/hardware/i2c/omap35xx/info.c $ $Rev: 217585 $" );
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/info.c $ $Rev: 680332 $")
+#endif

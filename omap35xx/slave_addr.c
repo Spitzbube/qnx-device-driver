@@ -19,24 +19,29 @@
  * $
  */
 
+
 #include "proto.h"
 
 /*
- The driver can support 7-bit and 10-bit slave addressing. 
- However the driver is not tested for 10-bit slave addressing 
- due to unavailabilty 10-bit slave. 
+ The driver can support 7-bit and 10-bit slave addressing.
+ However the driver is not tested for 10-bit slave addressing
+ due to unavailabilty 10-bit slave.
  */
 int
 omap_set_slave_addr(void *hdl, unsigned int addr, i2c_addrfmt_t fmt)
 {
     omap_dev_t      *dev = hdl;
 
-	if(fmt != I2C_ADDRFMT_7BIT && fmt != I2C_ADDRFMT_10BIT)
-		return -1;
+    if(fmt != I2C_ADDRFMT_7BIT && fmt != I2C_ADDRFMT_10BIT)
+        return -1;
 
-	dev->slave_addr = addr;
-    
-	return 0;
+    dev->slave_addr = addr;
+    dev->slave_addr_fmt = fmt;
+    return 0;
 }
 
-__SRCVERSION( "$URL: http://svn/product/tags/internal/bsp/nto650/ti-j5-evm/1.0.0/latest/hardware/i2c/omap35xx/slave_addr.c $ $Rev: 222214 $" );
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/slave_addr.c $ $Rev: 698026 $")
+#endif

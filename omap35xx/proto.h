@@ -30,6 +30,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/neutrino.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <sys/mman.h>
 #include <hw/inout.h>
 #include <hw/i2c.h>
@@ -42,6 +44,11 @@ typedef struct _omap_dev {
     uintptr_t           regbase;
     unsigned            physbase;
 
+    uintptr_t           clkctrl_base;
+    unsigned            clkctrl_phys;
+    uintptr_t           clkstctrl_base;
+    unsigned            clkctrl_disabled;
+
 	unsigned			re_start;
     int                 intr;
     int                 iid;
@@ -49,22 +56,47 @@ typedef struct _omap_dev {
 	int					chid;
 	int					coid;
 	int					xlen;
-	uint8_t 			*buf;
+	uint8_t				*buf;
 	unsigned int		speed;
 	volatile int		intexpected;
 	volatile uint32_t	status;
     struct sigevent     intrevent;
+    int                 intr_priority;
 
     unsigned            own_addr;
     unsigned            slave_addr;
+    i2c_addrfmt_t       slave_addr_fmt;
     unsigned            options;
+    int	        high_adjust_fast;
+    int	        high_adjust_slow;
+    int	        low_adjust_fast;
+    int	        low_adjust_slow;
     struct {
         unsigned char   major;
         unsigned char   minor;
     } rev;
+
+#ifdef VARIANT_omap4
+    unsigned*           debug_en;
+	unsigned			soc_version;
+	unsigned			no_powmgm;
+#endif
+	uintptr_t           i2c_context_vaddr;
+    unsigned            i2c_context_paddr;
+    struct {
+        unsigned        captured;
+        unsigned        ie;
+        unsigned        psc;
+        unsigned        scll;
+        unsigned        sclh;
+        unsigned        buf;
+        unsigned        sysc;
+        unsigned        we;
+    } state;
 } omap_dev_t;
 
 #define OMAP_OPT_VERBOSE        0x00000002
+#define OMAP_OPT_ROVR_XUDF_OK   0x00000004
 
 #define OMAP_I2C_PCLK           12000000UL  /* peripheral clock */
 #define OMAP_I2C_ICLK           4000000UL   /* internal clock for 100K bus speed */
@@ -82,16 +114,28 @@ typedef struct _omap_dev {
 #define OMAP_I2C_IE_MASK		(OMAP_I2C_IE_AL |OMAP_I2C_IE_NACK |OMAP_I2C_IE_ARDY \
 								|OMAP_I2C_IE_RRDY |OMAP_I2C_IE_XRDY \
 								|OMAP_I2C_IE_RDR | OMAP_I2C_IE_XDR)
+#define OMAP_I2C_WE_ALL         0x6F6F
+#define OMAP_I2C_CON_XSA        (1<<8)  //1: 10bit, 0:7bit
+#define OMAP_I2C_EVENT          1
 
-#define OMAP_I2C_EVENT			1
+#ifndef _SLOGC_I2C
+#define _SLOGC_I2C              23
+#endif
 
-#define OMAP_I2C_SYSTEST_ST_EN      0x8000 
-#define OMAP_I2C_SYSTEST_TMODE(x)   (x<<12)
-#define OMAP_I2C_SYSTEST_SCL_I      0x0008
-#define OMAP_I2C_SYSTEST_SCL_O      0x0004
-#define OMAP_I2C_SYSTEST_SDA_I      0x0002
-#define OMAP_I2C_SYSTEST_SDA_O      0x0001
 #define TWL4030_AUDIO_SLAVE_ADDRESS 0x49
+#define OMAP_I2C_DEF_INTR_PRIORITY  21
+
+#ifdef VARIANT_omap4
+    int omap_slogf(const char *fmt, ...);
+    void dump_all_regs(omap_dev_t *dev);
+    #define DEBUG(x...) {if (dev->debug_en != NULL && *dev->debug_en == dev->slave_addr) omap_slogf(x);}
+    #define DUMP_REGS(x) {if (dev->debug_en != NULL && *dev->debug_en == dev->slave_addr) dump_all_regs(x);}
+    #define CLEAR_DEBUG {if (dev->debug_en != NULL && *dev->debug_en == dev->slave_addr) *dev->debug_en = 0;}
+#else
+    #define DEBUG(x...) 
+    #define DUMP_REGS(x) 
+    #define CLEAR_DEBUG 
+#endif
 
 void *omap_init(int argc, char *argv[]);
 void omap_fini(void *hdl);
@@ -107,12 +151,22 @@ i2c_status_t omap_recv(void *hdl, void *buf,
         unsigned int len, unsigned int stop);
 i2c_status_t omap_send(void *hdl, void *buf, 
         unsigned int len, unsigned int stop);
+int omap_bus_reset(void *dev);
 
 int omap_wait_bus_not_busy(omap_dev_t *dev,  unsigned int stop);
 uint32_t omap_wait_status(omap_dev_t *dev);
 const struct sigevent *i2c_intr(void *area, int id);
 int omap_i2c_reset(omap_dev_t *dev);
 
+void omap_clock_enable(omap_dev_t* dev);
+void omap_clock_disable(omap_dev_t* dev);
+int omap_clock_toggle_init(omap_dev_t* dev);
+int omap_i2c_bus_recover(omap_dev_t *dev);
+int omap_reg_map_init(omap_dev_t* dev);
+
 #endif
 
-__SRCVERSION( "$URL: http://svn/product/tags/internal/bsp/nto650/ti-j5-evm/1.0.0/latest/hardware/i2c/omap35xx/proto.h $ $Rev: 450392 $" )
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/proto.h $ $Rev: 756950 $")
+#endif

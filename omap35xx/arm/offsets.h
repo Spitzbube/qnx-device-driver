@@ -27,4 +27,7 @@
 
 #endif
 
-__SRCVERSION( "$URL: $ $Rev: $" )
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/i2c/omap35xx/arm/offsets.h $ $Rev: 783665 $")
+#endif
