@@ -1,27 +1,27 @@
 /*
- * $QNXLicenseC: 
- * Copyright 2008, QNX Software Systems.  
- *  
- * Licensed under the Apache License, Version 2.0 (the "License"). You  
- * may not reproduce, modify or distribute this software except in  
- * compliance with the License. You may obtain a copy of the License  
- * at: http://www.apache.org/licenses/LICENSE-2.0  
- *  
- * Unless required by applicable law or agreed to in writing, software  
- * distributed under the License is distributed on an "AS IS" basis,  
- * WITHOUT WARRANTIES OF ANY KIND, either express or implied. 
- * 
- * This file may contain contributions from others, either as  
- * contributors under the License or as licensors under other terms.   
- * Please review this entire file for other proprietary rights or license  
- * notices, as well as the QNX Development Suite License Guide at  
- * http://licensing.qnx.com/license-guide/ for other information. 
- * $ 
+ * $QNXLicenseC:
+ * Copyright 2008, QNX Software Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"). You
+ * may not reproduce, modify or distribute this software except in
+ * compliance with the License. You may obtain a copy of the License
+ * at: http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ *
+ * This file may contain contributions from others, either as
+ * contributors under the License or as licensors under other terms.
+ * Please review this entire file for other proprietary rights or license
+ * notices, as well as the QNX Development Suite License Guide at
+ * http://licensing.qnx.com/license-guide/ for other information.
+ * $
  */
 
 /*
 #ifdef __USAGE
-%C - Serial driver for TI OMAP 
+%C - Serial driver for TI OMAP
 
 %C [options] [port[^shift][,irq][,k]] &
 Options:
@@ -34,6 +34,7 @@ Options:
  -I number    Size of raw input buffer (default 2048)
  -f           Enable hardware flow control (default)
  -F           Disable hardware flow control
+ -M           Disable MSR interrupt
  -O number    Size of output buffer (default 2048)
  -s           Enable software flow control
  -S           Disable software flow control (default)
@@ -43,28 +44,56 @@ Options:
  -l (0|1)     Enable Loopback mode (1=on, 0=off)
  -v           Set verbosity level
  -U uid:gid   Set the user id and group id
-  k - place this after the irq value to indicate that a Maxim RS-232 transceiver 
-      is used on this port, which requires a null character to be sent to it to 
-      wake it up after going into "Autoshutdown Plus" mode.
+ -o log=<tx|rx|all>[@/logging_dir]
+              Enable data logging to specified directory
+              (default directory = /dev/shmem)
+
+  k - place this after the irq value to indicate that a Maxim RS-232
+      transceiver is used on this port, which requires a null character
+      to be sent to it to wake it up after going into "Autoshutdown Plus" mode
 
 #endif
 */
 #include "externs.h"
 
 #ifdef OMAP5910
-#define DEFAULT_CLK 12000000
+#define DEFAULT_CLK			12000000
 #else
-#define DEFAULT_CLK 48000000
+#define DEFAULT_CLK			48000000
 #endif
 
-#define DEFAULT_DIV 16
+#define DEFAULT_DIV			16
+#define DEFAULT_FIFO_TX		8
+#define DEFAULT_FIFO_RX		16
+
+static unsigned
+encode_fifo_trigger(unsigned fifo_trigger)
+{
+	/*
+	 * devinit.fifo is used to store both the tx and rx fifo sizes,
+	 * but it is defined as an unsigned char, so only fifo sizes up
+	 * to 16 bytes are supported without special encoding. So, we'll
+	 * encode the fifo sizes here.
+	 */
+	switch (fifo_trigger) {
+		case 8:		return FIFO_TRIG_8;
+		case 16:	return FIFO_TRIG_16;
+		case 32:	return FIFO_TRIG_32;
+		case 56:	return FIFO_TRIG_56;
+		case 60:	return FIFO_TRIG_60;
+	}
+
+	/* Invalid value */
+	return 0;
+}
 
 unsigned
-options(int argc, char *argv[]) {
+options(int argc, char *argv[])
+{
 	int opt, numports = 0;
 	char *cp;
 	unsigned unit;
-	unsigned fifo_tx = 8, fifo_rx = 16;
+	unsigned fifo_tx = DEFAULT_FIFO_TX, fifo_rx = DEFAULT_FIFO_RX;
 	unsigned fifo_tx2 = 0, fifo_rx2 = 0;
 	DEV_OMAP	*dev;
 	user_parm = NULL;
@@ -72,19 +101,21 @@ options(int argc, char *argv[]) {
 		{
 			0, 0, 0,			// Port, port shift, interrupt
 			115200,				// Baud
-			2048, 2048, 256,		// isize, osize, csize
-			0, 0, 0, 0, 0, 			// cflag, iflag, lflag, oflag, fifo
-			DEFAULT_CLK, 			// clk
-			DEFAULT_DIV,			// div
+			2048, 2048, 256,	// isize, osize, csize
+			0, 0, 0, 0, 0,		// cflag, iflag, lflag, oflag, fifo
+			DEFAULT_CLK,		// clk
+			DEFAULT_DIV,		// div
 			"/dev/ser",			// Name
-         		NULL,           	 	// power handle
-         		0,      	          	// power flags
-         		0, 	               		// verbosity
-		 	0				// Rx highwater level
+			NULL,				// power handle
+			0,					// power flags
+			0,					// verbosity
+			0,					// Rx highwater level
+			"",					// Logging directory
+			0					// Logging enable flags
 		},
-		0,					// pwm_init
-		0,					// loopback disable
-		0					// auto_rts_enable
+		0,						// loopback disable
+		0,						// auto_rts_enable
+		0						// modem status interrupt disable
 	};
 
 	unsigned maxim_xcvr_kick = 0;
@@ -95,34 +126,36 @@ options(int argc, char *argv[]) {
 	unit = 1;
 	while (optind < argc) {
 		// Process dash options.
-		while ((opt = getopt(argc, argv, IO_CHAR_SERIAL_OPTIONS "ac:t:T:U:u:l:")) != -1) {	
+		while ((opt = getopt(argc, argv, IO_CHAR_SERIAL_OPTIONS "ac:t:T:U:u:l:M")) != -1) {
 			switch (ttc(TTC_SET_OPTION, &devinit, opt)) {
 			case 'a':
 				devinit.auto_rts_enable = 1;
 				break;
 			case 'c':
 				devinit.tty.clk = strtoul(optarg, &optarg, 0);
-				if((cp = strchr(optarg, '/')))
+				if ((cp = strchr(optarg, '/')))
 					devinit.tty.div = strtoul(cp + 1, NULL, 0);
 				break;
 			case 't':
 				fifo_rx = strtoul(optarg, NULL, 0);
-				if (fifo_tx < 4 || fifo_tx > 60)
+				fifo_rx2 = encode_fifo_trigger(fifo_rx);
+				if (0 == fifo_rx2)
 				{
-					fprintf(stderr,"Illegal rx fifo trigger. \n");
-					fprintf(stderr,"Trigger number must be between 4-60. \n");
-					fifo_rx = 16;
+					fifo_rx = DEFAULT_FIFO_RX;
+					fprintf(stderr,"Illegal RX fifo trigger. \n");
+					fprintf(stderr,"Trigger number must be 8,16,32,56, or 60. Set to default value %d.\n", fifo_rx);
 				}
 				break;
 			case 'T':
 				fifo_tx = strtoul(optarg, NULL, 0);
-				if (fifo_tx < 4 || fifo_tx > 60) 
+				fifo_tx2 = encode_fifo_trigger(fifo_tx);
+				if (0 == fifo_tx2)
 				{
-					fprintf(stderr,"Illegal tx fifo trigger. \n");
-					fprintf(stderr,"Tx trigger must be between 4-60\n");
-					fifo_tx = 8;
+					fifo_tx = DEFAULT_FIFO_TX;
+					fprintf(stderr,"Illegal TX fifo trigger. \n");
+					fprintf(stderr,"Trigger number must be 8,16,32,56, or 60. Set to default value %d.\n", fifo_tx);
 				}
-                break;
+				break;
 			case 'U':
 				user_parm = strdup(optarg);
 				break;
@@ -130,63 +163,25 @@ options(int argc, char *argv[]) {
 				unit = strtoul(optarg, NULL, 0);
 				break;
 			case 'l':
-				 devinit.loopback = strtoul(optarg, NULL, 0);
-				 break;
+				devinit.loopback = strtoul(optarg, NULL, 0);
+				break;
+			case 'M':
+				devinit.no_msr_int = 1;
+				break;
 			}
 		}
 
-        /*
-		 * devinit.fifo is used to store both the tx and rx fifo sizes,
-		 * but it is defined as an unsigned char, so only fifo sizes up
-		 * to 16 bytes are supported without special encoding. So, we'll
-		 * encode the fifo sizes here.
-		 *
-         */
-        switch (fifo_rx) {
-			case 8:
-				fifo_rx2 = FIFO_TRIG_8;
-				break;
-			case 16:
-				fifo_rx2 = FIFO_TRIG_16;
-				break;
-			case 32:
-				fifo_rx2 = FIFO_TRIG_32;
-				break;
-			case 56:
-				fifo_rx2 = FIFO_TRIG_56;
-				break;
-			case 60:
-				fifo_rx2 = FIFO_TRIG_60;
-				break;
-			default:
-				fifo_rx2 = 0;
-				break;
-		}
+		if (0 == fifo_rx2)
+			fifo_rx2 = encode_fifo_trigger(fifo_rx);
 
-        switch (fifo_tx) {
-			case 8:
-				fifo_tx2 = FIFO_TRIG_8;
-				break;
-			case 16:
-				fifo_tx2 = FIFO_TRIG_16;
-				break;
-			case 32:
-				fifo_tx2 = FIFO_TRIG_32;
-				break;
-			case 56:
-				fifo_tx2 = FIFO_TRIG_56;
-				break;
-			default:
-				fifo_tx2 = 0;
-				break;
-		}
+		if (0 == fifo_tx2)
+			fifo_tx2 = encode_fifo_trigger(fifo_tx);
 
-        // Store the rx and tx fifo's
-		
-        devinit.tty.fifo = (fifo_rx2<<4) | fifo_tx2;
+		// Store the rx and tx fifo's
+		devinit.tty.fifo = (fifo_rx2 << 4) | fifo_tx2;
 
 		// Process ports and interrupts.
-		while (optind < argc  &&  *(optarg = argv[optind]) != '-') {
+		while (optind < argc && *(optarg = argv[optind]) != '-') {
 			devinit.tty.port = strtoull(optarg, &optarg, 16);
 			if (*optarg == '^')
 				devinit.tty.port_shift = strtoul(optarg + 1, &optarg, 0);
@@ -202,14 +197,14 @@ options(int argc, char *argv[]) {
 			if ((dev = create_device(&devinit, unit++, maxim_xcvr_kick)) == NULL)
 			{
 				slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_ERROR, "io-char: Initialization of /dev/ser%d (port 0x%llx) failed", unit - 1, devinit.tty.port);
-		        fprintf(stderr, "io-char: Initialization of port 0x%llx failed\n", devinit.tty.port);
+				fprintf(stderr, "io-char: Initialization of port 0x%llx failed\n", devinit.tty.port);
 			}
 			else
 				++numports;
 			maxim_xcvr_kick = 0;
 			++optind;
 
-		if(dev->tty.verbose)
+			if (dev != NULL && dev->tty.verbose)
 			{
 				slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "Port ...................... %s (0x%x)", dev->tty.name, dev->port[0]);
 				slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "IRQ ....................... 0x%x", dev->intr);
@@ -226,7 +221,7 @@ options(int argc, char *argv[]) {
 #if 0	// There is no default device
 	if (numports == 0) {
 		void	*link = NULL;
-		for ( ;; ) {
+		for (;;) {
 			link = query_default_device(&devinit, link);
 			if (link == NULL) break;
 			create_device(&devinit, unit++, maxim_xcvr_kick);
@@ -237,4 +232,8 @@ options(int argc, char *argv[]) {
 	return (numports);
 }
 
-__SRCVERSION( "$URL: http://svn/product/tags/internal/bsp/nto650/ti-j5-evm/1.0.0/latest/hardware/devc/seromap/options.c $ $Rev: 564432 $" );
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/devc/seromap/options.c $ $Rev: 765604 $")
+#endif

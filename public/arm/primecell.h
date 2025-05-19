@@ -157,6 +157,7 @@
 
 #endif	/* __ARM_PRIMECELL_H_INCLUDED */
 
-
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
 #include <sys/srcversion.h>
-__SRCVERSION( "$URL: http://svn/product/tags/restricted/bsp/nto650/ti-j5-evm/latest/src/hardware/devc/public/arm/primecell.h $ $Rev: 568644 $" )
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/devc/public/arm/primecell.h $ $Rev: 680332 $")
+#endif

@@ -105,6 +105,7 @@
 #define FCR_RX_TRIG_8		0x80
 #define FCR_RX_TRIG_14		0xC0
 
-
-
-__SRCVERSION( "$URL: http://svn/product/tags/restricted/bsp/nto650/ti-j5-evm/latest/src/hardware/devc/public/hw/8250.h $ $Rev: 568644 $" )
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/devc/public/hw/8250.h $ $Rev: 680332 $")
+#endif

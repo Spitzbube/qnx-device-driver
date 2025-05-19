@@ -159,4 +159,9 @@
 
 #endif		/* __ARM_PL011_INC__ */
 
-/* __SRCVERSION("pl011.h $Rev: 568644 $"); */
+/* __SRCVERSION("pl011.h $Rev: 716263 $"); */
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/devc/public/arm/pl011.h $ $Rev: 716263 $")
+#endif

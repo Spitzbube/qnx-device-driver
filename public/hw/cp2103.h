@@ -19,14 +19,70 @@
  * $
  */
 
-typedef struct _gpio_cmd {
-	uint32_t	off;	/* pin or register depending on command */
-	uint8_t		val;
-} gpio_cmd_t;
+#ifndef __CP2103_H
+#define __CP2103_H
 
-#define DCMD_GPIO_PIN_READ			__DIOTF	(_DCMD_MISC, 0x01, gpio_cmd_t)
-#define DCMD_GPIO_PIN_WRITE			__DIOT	(_DCMD_MISC, 0x02, gpio_cmd_t)
-#define DCMD_GPIO_REG_READ			__DIOTF	(_DCMD_MISC, 0x05, gpio_cmd_t)
-#define DCMD_GPIO_REG_WRITE			__DIOT	(_DCMD_MISC, 0x06, gpio_cmd_t)
+/*
+Desc:	This call is made to get the current pin states.
+Args:	uint32_t to store bitmask of pin states.
+*/
+#define DCMD_CP210X_READ_LATCH      __DIOF(_DCMD_MISC, 0x01, uint32_t)
 
+/* Conveinence macro to exract a pin state out of the bitmask */
+#define CP210X_GET_PIN(pin,value) ((value>>pin) & 1)
 
+typedef struct _cp210x_wlatch {
+	uint32_t pin_mask;    /* Bitmask of pins to modify */
+	uint32_t pin_values;  /* Bitmask of pin states     */
+} cp210x_wlatch_t;
+
+/*
+Desc: This call is made to update the selected pin states.
+Args: cp210x_wlatch_t wlatch.
+*/
+#define DCMD_CP210X_WRITE_LATCH     __DIOT  (_DCMD_MISC, 0x02, cp210x_wlatch_t)
+
+/* Conveinence functions for configuring the wlatch pin_mask and pin_values members */
+static inline cp210x_wlatch_t cp210x_set_pin ( uint32_t pin, cp210x_wlatch_t wlatch )
+{
+	wlatch.pin_values |= (1<<pin);
+	wlatch.pin_mask |= (1<<pin);
+
+	return (wlatch);
+}
+
+static inline cp210x_wlatch_t cp210x_clr_pin ( uint32_t pin, cp210x_wlatch_t wlatch )
+{
+	wlatch.pin_values &= ~(1<<pin);
+	wlatch.pin_mask |= (1<<pin);
+
+	return (wlatch);
+}
+
+typedef struct _cp210x_pinconf {
+	uint8_t pin;        /* GPIO Pin to configure */
+	uint8_t value;      /* GPIO Pin configuration Flags */
+} cp210x_pinconf_t;
+
+/*
+Desc: This call is made to set a pins configuration.
+Args: pinconf_t structure.
+*/
+#define DCMD_CP210X_CHANGE_MODE     __DIOT  (_DCMD_MISC, 0x03, cp210x_pinconf_t)
+
+/* Values for CP210X_CHANGE_MODE - See AN721.pdf from Silicon Labs */
+#define CP210X_PUSH_PULL              0x00000001
+#define CP210X_OPEN_DRAIN             0x00000002
+#define CP210X_LATCH_HIGH             0x00000004
+#define CP210X_LATCH_LOW              0x00000008
+#define CP210X_ENABLE_LOW_POWER       0x00000010
+#define CP210X_DISABLE_LOW_POWER      0x00000020
+#define CP210X_WEAKPULLUP             0x00000040
+#define CP210X_DISABLE_WEAKPULLUP     0x00000080
+
+#endif
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/devc/public/hw/cp2103.h $ $Rev: 772448 $")
+#endif

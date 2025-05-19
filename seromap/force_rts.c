@@ -1,21 +1,24 @@
 /*
  * $QNXLicenseC:
- * Copyright 2011, QNX Software Systems. All Rights Reserved.
+ * Copyright 2014, QNX Software Systems.
  *
- * You must obtain a written license from and pay applicable
- * license fees to QNX Software Systems before you may reproduce,
- * modify or distribute this software, or any work that includes
- * all or part of this software.   Free development licenses are
- * available for evaluation and non-commercial purposes.  For more
- * information visit http://licensing.qnx.com or email
- * licensing@qnx.com.
+ * Licensed under the Apache License, Version 2.0 (the "License"). You
+ * may not reproduce, modify or distribute this software except in
+ * compliance with the License. You may obtain a copy of the License
+ * at: http://www.apache.org/licenses/LICENSE-2.0
  *
- * This file may contain contributions from others.  Please review
- * this entire file for other proprietary rights or license notices,
- * as well as the QNX Development Suite License Guide at
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ *
+ * This file may contain contributions from others, either as
+ * contributors under the License or as licensors under other terms.
+ * Please review this entire file for other proprietary rights or license
+ * notices, as well as the QNX Development Suite License Guide at
  * http://licensing.qnx.com/license-guide/ for other information.
  * $
  */
+
 
 #include <stdio.h>
 #include <string.h>
@@ -27,16 +30,16 @@
 
 #define CONTROL_CORE_PAD0_UART2_CTS_PAD1_UART2_RTS 0x4a100118
 
-#define OMAP44XX_GPIO_REG_SIZE 0x1000
+#define OMAP44XX_GPIO_REG_SIZE		0x1000
 
 /* UART2_RTS/GPIO124 is in the 4th GPIO block */
-#define OMAP44XX_GPIO3_BASE 0x48059000
+#define OMAP44XX_GPIO3_BASE			0x48059000
 
 /* 4th GPIO block holds GPIOs 96-127, 124 is the 28th GPIO in the block */
-#define OMAP44XX_GPIO124_MASK (1 << 28)
+#define OMAP44XX_GPIO124_MASK		(1 << 28)
 
-#define OMAP44XX_CLEARDATAOUT_REG 0x190
-#define OMAP44XX_SETDATAOUT_REG 0x194
+#define OMAP44XX_CLEARDATAOUT_REG	0x190
+#define OMAP44XX_SETDATAOUT_REG		0x194
 
 void
 omap_force_rts(DEV_OMAP* dev, int level)
@@ -74,12 +77,15 @@ omap_force_rts_init(DEV_OMAP* dev)
 
 fail2:
 	munmap_device_io(dev->pinmux_base, 4);
-	dev->pinmux_base = NULL;
+	dev->pinmux_base = (uintptr_t)MAP_FAILED;
 
 fail1:
 	return -1;
-
 }
 #endif /* WINBT */
 
-__SRCVERSION( "$URL: $ $Rev: $" );
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/devc/seromap/force_rts.c $ $Rev: 814187 $")
+#endif
