@@ -1,3 +1,2 @@
-EARLY_DIRS=cam
-LIST=DEVB
+LIST=CPU
 include recurse.mk
