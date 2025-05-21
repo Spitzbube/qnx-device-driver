@@ -1,4 +1,2 @@
-LIST=USB
-EARLY_DIRS=hcd usbdi usbdci
-LATE_DIRS=devu
+LIST=DEVU
 include recurse.mk
