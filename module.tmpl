@@ -1,30 +1,38 @@
 <?xml version="1.0"?>
-<module name="wdtkick">
-	<type>Element</type>
-	<classification>Driver</classification>
+<module name="dm814x-wdtkick">
+    <type>Element</type>
+    <classification>Driver</classification>
 
-	<description>
-		<short> Watchdog Timer Module</short>
-	        <abstract>
-		<![CDATA[The wdtkick is the Watchdog Timer Module for OMAP3530]]>
-	        </abstract>
-	</description>
+    <description>
+        <short>Watchdog Timer Module</short>
+        <abstract>
+            <![CDATA[The dm814x-wdtkick is the Watchdog Timer Module for TI DM814x processor]]>
+        </abstract>
+    </description>
 
-	<supports>
-		<availability ref="ostargets"/>
-	</supports>
+    <supports>
+        <availability>
+            <cpu isa="arm">
+                <byteOrder>le</byteOrder>
+                <byteOrder>le.v7</byteOrder>
+            </cpu>
+        </availability>
+    </supports>
 
-	<source available="false">
-		<location type="">.</location>
-	</source>
+    <source available="false">
+        <location type="">.</location>
+    </source>
+    <GroupOwner>hw</GroupOwner>
 
-	<GroupOwner>hw</GroupOwner>
+    <contents>
+        <component id="dm814x-wdtkick" generated="true">
+            <location basedir="{cpu}/{endian}"
+                 runtime="true">dm814x-wdtkick</location>
+        </component>
+    </contents>
 
-	<contents>
-		<component id="wdtkick" generated="true">
-			<location basedir="{os}/{cpu}/{o|endian}"
-				 runtime="true">wdtkick</location>
-		</component>
-	</contents>
+    <requires>
+	<part build="true" location="lib/drvr" />
+    </requires>
 
 </module>

@@ -1,6 +1,6 @@
 /*
  * $QNXLicenseC:
- * Copyright 2010, QNX Software Systems.
+ * Copyright 2011, QNX Software Systems.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You
  * may not reproduce, modify or distribute this software except in
@@ -18,158 +18,161 @@
  * http://licensing.qnx.com/license-guide/ for other information.
  * $
  */
-
+  
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/resmgr.h>
 #include <sys/neutrino.h>
 #include <hw/inout.h>
+#include <hw/i2c.h>
 #include <sys/slog.h>
 #include <sys/slogcodes.h>
 #include <errno.h>
 #include <sys/procmgr.h>
 #include <drvr/hwinfo.h>
-#include <arm/am335x.h>
-#include <fcntl.h>
-#include <hw/i2c.h>
+#include <time.h>
 
-/*
- * AM335x Watchdog driver
- *
- *  NOTE:  This driver assumes UNSECURE mode!
- */
+#define WDTIMER0_WDT_WTGR 	0x30
+#define WDTIMER0_WDT_WSPR 	0x48
 
-#define AM335X_WDT_MAX_TIMEOUT		131000 /* mseconds */
-#define AM335X_WDT_DFLT_KCKTIME		15000
+#define DM814X_WDT_WSPR_MASK         0xffff
+#define DM814X_WDT_WSPR_ENABLED      0x4444
 
-//-----------------------------------------------------
-int main(int argc, char *argv[])
+#define ENABLE_SEQ_1  0xbbbb
+#define ENABLE_SEQ_2  0x4444
+
+int main(int argc, char *argv[]) 
 {
-    int opt, curr;
-    int exit = 0;
-    int priority = 10;
-    uint32_t kicktime = AM335X_WDT_DFLT_KCKTIME;
-    uint32_t timeout = 0;
-    uint32_t counter_reset_val;
-    uint32_t  base;
-
-    /* Process dash options.*/
-    while ((opt = getopt( argc, argv, "p:t:k:e" )) != -1)
+    int         opt;
+    int         priority = 10;  // default priority:default 10
+    int         time = -1;      // default time in mS for watchdog timer kick
+    int         verbose =0;  
+    int         exit = 0;                     
+    uintptr_t   regbase = MAP_DEVICE_FAILED;
+    size_t      len = -1;
+    uint32_t    physbase = 0;
+    hwiattr_timer_t wdt_attr;
+    unsigned    hwi_off ;
+    struct sched_param sched_param;
+    
+    
+    /* Getting the WDOG Base addresss from the Hwinfo Section if available */ 
+    hwi_off = hwi_find_device("wdt", 0);
+    if (HWI_NULL_OFF != hwi_off)
     {
-        switch (opt) {
-            case 'p': // priority
-                priority = strtoul( optarg, NULL, 0 );
-                break;
-            case 't': // watchdog timeout in milliseconds
-                timeout = strtoul( optarg, NULL, 0 );
-                break;
-            case 'k': // kick time period in milliseconds
-                kicktime = strtoul( optarg, NULL, 0 );
-                break;
-			case 'e':
-				exit = 1;
-				break;
+        if (EOK == hwiattr_get_timer(hwi_off, &wdt_attr)) {
+            if (wdt_attr.common.location.len > 0) {
+                len = wdt_attr.common.location.len;
+            }
+            if (wdt_attr.common.location.base > 0) {
+                physbase = wdt_attr.common.location.base;
+            }
+            time = hwitag_find_clkfreq(hwi_off, NULL);
         }
     }
-    fprintf( stdout, "changing thread parameters\n" );
+        
+    /* Process command line options */
+    while ((opt = getopt(argc, argv, "a:l:p:t:ev")) != -1) {    
+        switch (opt) {
+            case 'a':   // WDT register physical base address
+                physbase = strtoul(optarg, NULL, 0);
+                break;
+			case 'l': 	                    
+				len = strtoul(optarg, NULL, 0);
+				break;
+   			case 'p':   // priority
+                priority = strtoul(optarg, NULL, 0) ;
+                break;
+            case 't':   // kick interval                        
+                time = strtoul(optarg, NULL, 0);
+                break;
+            case 'e':   // exit flag    
+                exit = 1;
+                break;
+            case 'v':   // verbose flag    
+                verbose++;
+                break;
+        }
+    }
 
-    // Enable IO capability.
-    if (ThreadCtl( _NTO_TCTL_IO, NULL ) == -1)
+    /*check if the params are valid*/ 
+    if (0 == physbase) {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  Invalid WDT register physics based address. Please check the command line or HWInfo default setting.");
+        return EXIT_FAILURE;
+    }
+    if (0 == len) 
     {
-        slogf( _SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "netio:  ThreadCtl" );
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  Invalid  WDT registers size. Please check the command line or HWInfo default setting.");
+        return EXIT_FAILURE;
+    }
+    if (-1 == time)
+    {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  Invalid default time for watchdog timer kick. Please check the command line or HWInfo default setting.");
+        return EXIT_FAILURE;
+    }
+    
+    // Enable IO capability.
+    if (-1 == ThreadCtl( _NTO_TCTL_IO_PRIV, NULL )) {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  ThreadCtl failed");
         return EXIT_FAILURE;
     }
 
-    // Run in the background
-    if (procmgr_daemon( EXIT_SUCCESS, PROCMGR_DAEMON_NOCLOSE | PROCMGR_DAEMON_NODEVNULL ) == -1)
-    {
-        slogf( _SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "%s:  procmgr_daemon", argv[0] );
-        return EXIT_FAILURE;
+    //run in the background
+	if ( procmgr_daemon( EXIT_SUCCESS, PROCMGR_DAEMON_NOCLOSE | PROCMGR_DAEMON_NODEVNULL ) == -1 ) {
+		slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO,"%s:  procmgr_daemon",argv[0]);
+		return EXIT_FAILURE;
+	}
+
+    // configure information 
+    if (verbose) {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  Paddr = 0x%x, size = 0x%x, kick = %d, Priority = %d, exit = %d",
+            physbase, len, time, priority, exit);
     }
 
     // If requested: Change priority.
-    curr = getprio( 0 );
-    if (priority != curr && setprio( 0, priority ) == -1)
-        slogf( _SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "WDT:  can't change priority" );
-
-    // No timeout specified; use default
-    if (timeout == 0)
-    {
-        fprintf( stdout, "AM335X Watchdog: No timeout specified, using 2x kicktime = %u ms\n",
-        		kicktime * 2 );
-        timeout = kicktime * 2;
-    }
-    else if (timeout > AM335X_WDT_MAX_TIMEOUT)
-    {
-        // AM335x max timeout value is 131 seconds
-        fprintf( stdout, "AM335X Watchdog:  Timeout requested exceeds max of %dms.  Setting to %dms. \n",
-        		AM335X_WDT_MAX_TIMEOUT, AM335X_WDT_MAX_TIMEOUT);
-                timeout = AM335X_WDT_MAX_TIMEOUT;
+    if (-1 != SchedGet(0, 0, &sched_param)) {
+        if (sched_param.sched_priority != priority) {
+            sched_param.sched_priority = priority;
+            if (-1 == SchedSet(0, 0, SCHED_NOCHANGE, &sched_param)) {
+                slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO,"DM814X-wdtkick:  can't change priority");
+            }
+        }
+    } else {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  can't obtain priority");
     }
 
-    fprintf( stdout, "phy_base=0x%08x size=0x%08x\n", WDT_BASE, WDT_SIZE );
-	base = (uint32_t)mmap_device_memory( 	NULL,
-											WDT_SIZE,
-											PROT_READ | PROT_WRITE | PROT_NOCACHE,
-											0,
-											WDT_BASE );
-	if (base == MAP_DEVICE_FAILED) {
-		slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO,"Failed to map WDT registers");
-		return EXIT_FAILURE;
-	}
-	fprintf( stdout, "stop timer\n" );
-
-	// Stop the timer
-	out32(base + WDT_WSPR, WDT_WSPR_STOPVAL1);
-	delay(1);
-	out32(base + WDT_WSPR, WDT_WSPR_STOPVAL2);
-	delay(1);
-
-	slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO,"Watchdog Timer is disabled now.");
-	if(exit)
-	{
-		slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO,"Terminating Watchdog Timer Module.");
-		munmap_device_memory( (void*)base, WDT_SIZE );
-		return EXIT_SUCCESS;
-	}
-
-	// [BA 2011/11/10]
-	// The WDT state machine is clocked from the 32KHz WDT clock which means
-	// that we must leave enough time between register accesses for previous
-	// writes to take effect.  A 1 millisecond delay is sufficient.
-
-	// Disable prescaler, no event delay
-	out32(base + WDT_WCLR, 0);
-	delay(1);
-	out32(base + WDT_WDLY, 0);
-	delay(1);
-
-	// Calculate counter value to provide required ms duration until overflow
-	counter_reset_val = 0xFFFFFFFF - ((timeout * WDTI_FCLK) / 1000);
-
-	// Load the actual counter, and set the load register value for the periodic resets
-	out32(base + WDT_WCRR, counter_reset_val);
-	delay(1);
-	out32(base + WDT_WLDR, counter_reset_val);
-	delay(1);
-
-	// Start the timer
-	out32(base + WDT_WSPR, WDT_WSPR_STARTVAL1);
-	delay(1);
-	out32(base + WDT_WSPR, WDT_WSPR_STARTVAL2);
-	delay(1);
-
-    //kick the watchdog timer with kicktime interval
-    while (1)
-    {
-    	// reset the overflow counter for the watchdog
-    	out32(base + WDT_WTGR, ~in32(base + WDT_WTGR));
-
-        // Delay is in ms
-        delay( kicktime );
+    // mmap io memory for WDT
+    regbase = mmap_device_io(len, physbase);
+    if (MAP_DEVICE_FAILED == regbase) {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  Failed to map WDT registers");
+        return EXIT_FAILURE;
     }
 
+    if ((in32(regbase + WDTIMER0_WDT_WSPR) & DM814X_WDT_WSPR_MASK) != DM814X_WDT_WSPR_ENABLED)
+    {
+        slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  WDT is disabled now");
+        if(exit)
+        {
+            slogf(_SLOG_SETCODE(_SLOGC_CHAR, 0), _SLOG_INFO, "DM814X-wdtkick:  Terminate WDT Module.");
+            goto done;
+        }   
+    }
+    
+    while (1) {
+		out32(regbase + WDTIMER0_WDT_WTGR, in32(regbase + WDTIMER0_WDT_WTGR) ^ 0xffffffff);
+        delay(time);
+    }
+        
+done:  
+    munmap_device_io(regbase,len);
     return EXIT_SUCCESS;
 }
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/support/dm814x-wdtkick/main.c $ $Rev: 805731 $")
+#endif
