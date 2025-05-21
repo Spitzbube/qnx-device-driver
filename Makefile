@@ -1,2 +1,2 @@
-LIST=CAN
+LIST=CPU
 include recurse.mk

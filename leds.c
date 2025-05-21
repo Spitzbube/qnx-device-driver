@@ -1,6 +1,6 @@
 /*
  * $QNXLicenseC:
- * Copyright 2010, QNX Software Systems.
+ * Copyright 2013, QNX Software Systems.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You
  * may not reproduce, modify or distribute this software except in
@@ -251,51 +251,6 @@ int doleds(unsigned char ch)
     return 1;
 }
 
-unsigned char lastchar_to_int(char *buf)
-{
-	int				i;
-	unsigned char	leds = 0;
-
-    if ( (buf[0]=='0') && ((buf[1]=='x')||(buf[1]=='X')) )
-    {
-    	i=2;
-    	while ( ((buf[i]>='0')&&(buf[i]<='9')) ||
-    			((buf[i]>='a')&&(buf[i]<='f')) ||
-    			((buf[i]>='A')&&(buf[i]<='F'))    )
-    	{
-    		i++;
-    	}
-    	i--;
-    	switch (buf[i])
-    	{
-    	case '0': leds = 0; break;
-    	case '1': leds = 1; break;
-    	case '2': leds = 2; break;
-    	case '3': leds = 3; break;
-    	case '4': leds = 4; break;
-    	case '5': leds = 5; break;
-    	case '6': leds = 6; break;
-    	case '7': leds = 7; break;
-    	case '8': leds = 8; break;
-    	case '9': leds = 9; break;
-    	case 'a': case 'A': leds = 10; break;
-    	case 'b': case 'B': leds = 11; break;
-    	case 'c': case 'C': leds = 12; break;
-    	case 'd': case 'D': leds = 13; break;
-    	case 'e': case 'E': leds = 14; break;
-    	case 'f': case 'F': leds = 15; break;
-    	}
-    }
-    else
-    {
-    	leds = (unsigned char )atoi(buf)&0xf;
-    }
-
-    printf("Writes leds 0x%x [%d]\n", leds, leds);
-
-    return leds;
-}
-
 int io_write (resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb)
 {
     int 		    status;
@@ -325,7 +280,8 @@ int io_write (resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb)
     resmgr_msgread(ctp, buf, msg->i.nbytes, sizeof(msg->i));
     buf [msg->i.nbytes] = '\0'; /* just in case the text is not NULL terminated */
 
-    leds = lastchar_to_int(buf);
+    leds = strtol(buf, 0,0) & 0xf;
+    
     doleds(leds);
 
     free(buf);
@@ -335,3 +291,8 @@ int io_write (resmgr_context_t *ctp, io_write_t *msg, RESMGR_OCB_T *ocb)
 
     return (_RESMGR_NPARTS (0));
 }
+
+#if defined(__QNXNTO__) && defined(__USESRCVERSION)
+#include <sys/srcversion.h>
+__SRCVERSION("$URL: http://svn.ott.qnx.com/product/branches/7.0.0/trunk/hardware/support/am335x-leds/leds.c $ $Rev: 719661 $")
+#endif
