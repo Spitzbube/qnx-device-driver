@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
-<module name="i2c-omap35xx">
+<module name="am335x-boardid">
 	<type>Element</type>
 	<classification>Driver</classification>
 
 	<description>
-            <short>OMAP3530 I2C Driver</short>
+            <short>Am335x boardid driver</short>
 	        <abstract>
-	                <![CDATA[This Multi-master fast mode capable interface is supported in the TI OMAP3530 BSP.]]>
+	                <![CDATA[This interface is supported in the AM335x BSP.]]>
 	        </abstract>
 	</description>
 
@@ -24,14 +24,10 @@
 	<GroupOwner>hw</GroupOwner>
 
 	<contents>
-		<component id="omap35xx" generated="true">
+		<component id="am335x" generated="true">
 			<location basedir="{cpu}/{endian}"
-				 runtime="true">i2c-omap35xx</location>
+				 runtime="true">am335x-boardid</location>
 		</component>
 	</contents>
-
-	<requires>
-		<part build="false" location="lib/i2c"/>
-	</requires>
 
 </module>
