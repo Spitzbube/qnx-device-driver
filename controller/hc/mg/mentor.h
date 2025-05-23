@@ -125,6 +125,7 @@ typedef struct _hctrl_t hctrl_t;
 	#define RXCSR_AUTOREQ					( 1 << 14 )
 	//#define RXCSR_AUTOCLEAR				( 1 << 15 )
 
+#define MUSB_COUNT0					0x108	// 16-bit
 
 #define MUSB_TXTYPE(n)				( 0x10a + ( 0x10 * (n) ) ) // 8-bit
 #define MUSB_IDX_TXTYPE				0x1a	// 8-bit
@@ -230,6 +231,21 @@ struct _hctrl_t_Inner_0x28
     int Data_12; //12
     //???
 };
+
+
+struct Struct_0xe4
+{
+    void* Data_0; //0
+    void* Data_4__; //4
+    struct Struct_0xe4_Inner_0x1c* Data_8; //8
+    uint8_t bData_0xc; //0xc
+    int Data_0x10; //0x10
+    int Data_0x14; //0x14
+    LIST_HEAD(, Struct_0xe4_Inner_0x1c) dma_free_q; //0x18
+    LIST_HEAD(, Struct_0xe4_Inner_0x1c) dma_active_q; //0x1c
+    //0x20
+};
+
 
 struct _hctrl_t {
     usb_hcd_t* uhc; //0

@@ -43,7 +43,11 @@ void mentor_bottom_half(hctrl_t*);
 static int mentor_ctrl_transfer(void*, iousb_transfer_t*, iousb_endpoint_t*, uint8_t*, uint32_t, uint32_t);
 static int mentor_ctrl_transfer_abort(void*, iousb_transfer_t*, iousb_endpoint_t*);
 
-extern const struct sigevent * mentor_interrupt_handler(void* a, int b);
+static const struct sigevent * mentor_interrupt_handler(void* a, int b);
+
+void MENTOR_LoadFIFO(hctrl_t* hc, uint16_t b, int c, uint16_t r8);
+void MENTOR_ReadFIFO(hctrl_t* hc, uint16_t r6, int d, uint16_t r7);
+
 
 #ifdef USE_ORIGINAL_DLL
 extern int mentor_controller_init(usb_hcd_t*, uint32_t, char*);
@@ -215,6 +219,240 @@ static int mentor_init(void* dll_hdl, dispatch_t* dpp, iousb_self_t* iousb_self,
 static int mentor_shutdown(void* dll_hdl)
 {
     return 0;
+}
+
+
+/* todo */
+void MENTOR_ProcessControlDone(hctrl_t* hc)
+{
+    struct _musb_transfer* r4 = hc->Data_0xd8[0];
+    if (r4 == NULL)
+    {
+        //->loc_4ee8
+        return;
+    }
+
+    struct Struct_0xa4* r6 = r4->Data_0x30;
+    
+    if (r6->bData_0x1f != 0)
+    {
+        //->loc_4ee8
+        return;
+    }
+
+    int status = 0;
+    uint16_t wCsr;
+
+    wCsr = HW_Read16(hc, MUSB_CSR0);
+
+    if (wCsr & CSR0_RXSTALL)
+    {
+        status = USBD_STATUS_STALL;
+    }
+
+    if (wCsr & (CSR0_NAK_TIMEOUT | CSR0_ERROR))
+    {
+        status = USBD_STATUS_NOT_ACCESSED;
+        //->loc_4e3c
+    }
+
+    if (status == 0)
+    {
+        if (r4->flags & PIPE_FLAGS_TOKEN_IN)
+        {
+            uint16_t sl;
+            sl = HW_Read16(hc, MUSB_COUNT0);
+#if 0 //No printf in ISR
+            fprintf(stderr, "MENTOR_ProcessControlDone: sl=%d\n", sl);
+#endif
+            int sb = sl;
+
+            if ((uint32_t)(r4->xfer_length - r4->bytes_xfered) < sl)
+            {
+                status = USBD_STATUS_DATA_OVERRUN;
+                //->0x00004e3c
+            }
+            else if (/*sl*/sb > 0)
+            {
+                MENTOR_ReadFIFO(hc, 0, 
+                    r4->xfer_buffer + r4->bytes_xfered, 
+                    sl);
+
+                r4->bytes_xfered += sl;
+
+                if ((r6->mps == sl) && (r4->xfer_length > r4->bytes_xfered))
+                {
+                    HW_Write16(hc, MUSB_CSR0, wCsr | 0x20);
+                    //->loc_4ee8
+                    return;
+                }
+                //0x00004e3c
+            }
+            //->0x00004e3c
+        } //if (r4->flags & PIPE_FLAGS_TOKEN_IN)
+        else if (r4->flags & PIPE_FLAGS_TOKEN_OUT)
+        {
+            if (r4->xfer_length > r4->bytes_xfered)
+            {
+                uint32_t r6_ = r6->mps;
+                if (r6_ >= (r4->xfer_length - r4->bytes_xfered))
+                {
+                    r6_ = r4->xfer_length - r4->bytes_xfered;
+                }
+
+                MENTOR_LoadFIFO(hc, 0, 
+                    r4->xfer_buffer + r4->bytes_xfered,
+                    r6_);
+
+                r4->bytes_xfered += r6_;
+
+                HW_Write16(hc, MUSB_CSR0, 
+                    HW_Read16(hc, MUSB_CSR0) | CSR0_TXPKTRDY);
+                //->loc_4ee8
+                return;
+            }
+            //loc_4e3c
+        } //else if (r4->flags & PIPE_FLAGS_TOKEN_OUT)
+        else if (r4->flags & PIPE_FLAGS_TOKEN_SETUP) 
+        {
+            r4->bytes_xfered = r4->xfer_length;
+        } //else if (r4->flags & 1)
+    } //if (status == 0)
+    //loc_4e3c
+    r6->Data_0x20 = (wCsr >> 9) & 1;
+
+    HW_Write16(hc, MUSB_CSR0, 0);
+
+    MUSB_LOCK
+
+    r6->Data_8.sqh_first = SIMPLEQ_NEXT(r4, link);
+    if (r6->Data_8.sqh_first == NULL)
+    {
+        r6->Data_8.sqh_last = &r6->Data_8.sqh_first;
+    }
+
+    r4->status = status;
+
+    SIMPLEQ_INSERT_TAIL(&hc->transfer_complete_q, r4, link);
+
+    if ((status == 0) && ((r4 = r6->Data_8.sqh_first) != NULL))
+    {
+        MUSB_UNLOCK
+
+        MENTOR_StartControlEtd(hc, r4);
+    }
+    else
+    {
+        hc->Data_0xd8[0] = NULL;
+
+        if (status == 0)
+        {
+            r6->Data_0x10 &= ~(1 << 0);
+        }
+        MUSB_UNLOCK
+    }
+}
+
+
+/* complete */
+void mentor_get_ext_intstatus(hctrl_t* hc, 
+    uint16_t* int_rx, uint16_t* int_tx, uint16_t* int_usb)
+{
+#define AM35X_INTR_USB_SHIFT	0
+#define AM35X_INTR_USB_MASK	(0x1ff << AM35X_INTR_USB_SHIFT)
+
+#define AM35X_INTR_RX_SHIFT	16
+#define AM35X_INTR_TX_SHIFT	0
+#define AM35X_TX_EP_MASK	0xffff		/* EP0 + 15 Tx EPs */
+#define AM35X_RX_EP_MASK	0xfffe		/* 15 Rx EPs */
+#define AM35X_TX_INTR_MASK	(AM35X_TX_EP_MASK << AM35X_INTR_TX_SHIFT)
+#define AM35X_RX_INTR_MASK	(AM35X_RX_EP_MASK << AM35X_INTR_RX_SHIFT)
+
+    struct Struct_0xe4* r4 = hc->Data_0xfc/*dma_hdl*/;
+
+    /* Get endpoint interrupts */
+    uint32_t epintr = *((volatile uint32_t*)(r4->Data_0 + 0x30));
+    *((volatile uint32_t*)(r4->Data_0 + 0x30)) = epintr; //Clear
+
+    *int_rx = (epintr & AM35X_RX_INTR_MASK) >> AM35X_INTR_RX_SHIFT;
+    *int_tx = (epintr & AM35X_TX_INTR_MASK) >> AM35X_INTR_TX_SHIFT;
+
+    uint32_t usbintr = *((volatile uint32_t*)(r4->Data_0 + 0x34));
+    usbintr = (usbintr & AM35X_INTR_USB_MASK) >> AM35X_INTR_USB_SHIFT;
+    *((volatile uint32_t*)(r4->Data_0 + 0x34)) = usbintr; //Clear
+
+    *int_usb = usbintr;
+}
+
+
+/* complete */
+void mentor_clr_ext_int(hctrl_t* hc)
+{
+    /* Empty, because all active interrupts were already cleared
+        when status registers were read.*/
+}
+
+
+/* complete */
+const struct sigevent * mentor_interrupt_handler(void* a, int b)
+{
+    hctrl_t *hc = a;
+    uint16_t int_usb;
+    uint16_t int_tx;
+    uint16_t int_rx;
+
+    mentor_get_ext_intstatus(hc, &int_rx, &int_tx, &int_usb);
+
+#if 0//def DEBUG_INTERRUPT_THREAD
+    mentor_slogf(NULL, 12, _SLOG_ERROR, 3, 
+        ">>>>>>>>>>>> mentor_interrupt_handler: int_rx=0x%x, int_tx=0x%x",
+        int_rx, int_tx);
+#endif    
+
+    if (int_tx & 1) //EP0?
+    {
+        MENTOR_ProcessControlDone(hc);
+    }
+
+    uint16_t r1 = (int_rx | int_tx) & 0xfffe;
+    if (r1 != 0)
+    {
+        MENTOR_ProcessETDDone(hc, r1);
+    }
+
+    if (int_usb != 0)
+    {
+        if ((int_usb & (1 << 4)/*Conn???*/) != 0)
+        {
+            hc->Data_0x8c &= ~0x04;
+            hc->Data_0x8c |= 0x02;
+        }
+        else if ((int_usb & 
+            ((1 << 7)/*VBus Error???*/ |
+            (1 << 5)/*Discon???*/ |
+            (1 << 2)/*Reset/Babble???*/)) != 0)
+        {
+            hc->Data_0x8c &= ~(0x02 | 0x04);
+        }
+    }
+
+    mentor_clr_ext_int(hc);
+    
+    MUSB_LOCK
+
+    if (!SIMPLEQ_EMPTY(&hc->transfer_complete_q) && 
+        (hc->wData_0xea == 0))
+    {
+        hc->wData_0xea = 1;
+
+        MUSB_UNLOCK
+
+        return &hc->intr_event;
+    }
+
+    MUSB_UNLOCK
+
+    return NULL;
 }
 
 
@@ -3767,6 +4005,47 @@ int mentor_controller_init(usb_hcd_t* uhcd/*r5*/,
     return 0;
 }
 
+
+
+/* todo */
+void MENTOR_ReadFIFO(hctrl_t* hc, uint16_t b, int d, uint16_t r7)
+{
+    uint16_t r6 = d + r7;
+    uint32_t* r5 = d;
+
+    while (1)
+    {
+        uint16_t r4 = (int)r6 - (int)r5;
+        if (r4 < 4)
+        {
+            break;
+        }
+
+        *r5++ = *((volatile uint32_t*)(hc->Data_0x14 + 0x20 + b * 4));
+    }
+
+    int r6_ = (r7 >> 2) * 0x3fff;
+    int r5_ = d + ((r7 >> 2) << 2);
+    uint16_t r3 = r7  + (r6_ << 2);
+    if (r3 != 0)
+    {
+        uint32_t r2;
+
+        r2 = *((volatile uint32_t*)(hc->Data_0x14 + 0x20 + b * 4));
+
+        if (r3 & 2)
+        {
+            *((volatile uint16_t*)r5_) = r2;
+            r5_ += 2;
+            r2 >>= 16;
+        }
+
+        if (r3 & 1)
+        {
+            *((volatile uint8_t*)r5_) = r2;
+        }
+    }
+}
 
 
 /* complete */
