@@ -47,6 +47,13 @@ static const struct sigevent * mentor_interrupt_handler(void* a, int b);
 
 void MENTOR_LoadFIFO(hctrl_t* hc, uint16_t b, int c, uint16_t r8);
 void MENTOR_ReadFIFO(hctrl_t* hc, uint16_t r6, int d, uint16_t r7);
+extern int MENTOR_ProcessMultiInComplete();
+extern int MENTOR_ProcessMultiOutComplete();
+extern int MENTOR_ProcessOutDMAComplete();
+extern int MENTOR_ProcessOutComplete();
+extern int MENTOR_ProcessInComplete();
+
+extern int MENTOR_AllocEtd(struct _hctrl_t*, struct Struct_0xa4*, int);
 
 
 #ifdef USE_ORIGINAL_DLL
@@ -351,6 +358,176 @@ void MENTOR_ProcessControlDone(hctrl_t* hc)
         }
         MUSB_UNLOCK
     }
+}
+
+
+/* 0x00005738 - todo */
+int MENTOR_ProcessETDDone(hctrl_t* hc/*r5*/, uint16_t fp)
+{
+    int fp_0x34;
+//    int sl = 16;
+    int r7;
+
+    fp >>= 1;
+
+    for (r7 = 1; fp != 0; r7++, fp >>= 1)
+    {
+        //6abc
+        if (fp & 0x01)
+        {
+            //6acc
+            struct _musb_transfer* td = hc->Data_0xd8[r7];
+            if (td == NULL)
+            {
+                //6ad6
+                HW_Write16(hc, MUSB_RXCSR(r7), 0);
+                HW_Write16(hc, MUSB_TXCSR(r7), 0);
+                //->6c34
+            }
+            else
+            {
+                //6ae4
+                int fp_0x2c = td->flags;
+                struct Struct_0xa4* sb = td->Data_0x30;
+
+                if (sb->bData_0x1f == 0)
+                {
+                    //6af4
+                    if (fp_0x2c/*r2*/ & (1 << 2))
+                    {
+                        //6afc
+                        uint32_t r3 = HW_Read16(hc, MUSB_RXCSR(r7));
+
+                        sb->Data_0x20 = (r3 & RXCSR_DATA_TOGGLE) != 0;
+                        uint32_t r4 = r3 & 0xffff;
+
+                        if (((r4 & 0x14c) != 0) ||
+                            (hc->Data_0x74 & (1 << r7)))
+                        {
+                            //6b1c
+                            int r1 = (1 << r7);
+                            if (hc->Data_0x74 & r1)
+                            {
+                                //6b26
+                                r4 = 8;
+                                atomic_clr(/*fp_0x30*/&hc->Data_0x74, r1);
+                                //->6b44
+                            }
+                            else
+                            {
+                                //6b36
+                                if (r4 & 0x40)
+                                {
+                                    r4 = 4;
+                                }
+                                else
+                                {
+                                    r4 = 0x0f;
+                                }
+                            }
+                            //6b44
+                            if (fp_0x2c & 0x2400)
+                            {
+                                //0x00005854
+                                MENTOR_AbortDMA_RX(hc, sb);
+                            }
+                            //6b52
+                            //->6c2e
+                            (td->Func_0x38)(hc, td, 0, r4);
+                        }
+                        else
+                        {
+                            //6b5a: Read RXCOUNT
+                            r3 = HW_Read16(hc, MUSB_RXCOUNT(r7));
+                            fp_0x34 = r3/*r1*/;
+                            if ((r3/*r1*/ + td->bytes_xfered) > td->xfer_length)
+                            {
+                                //6b6c
+                                //->6b56
+                                (td->Func_0x38)(hc, td, 0, 8);
+                            }
+                            else
+                            {
+                                //6b72
+                                if (fp_0x2c & 0x200)
+                                {
+                                    //6b76
+                                    mentor_start_dma_transfer(hc, sb, td, 0, 
+                                        r7, sb->Data_0x2c, 
+                                        td->xfer_buffer_paddr + td->bytes_xfered,
+                                        r3/*r1*/);
+                                    //->6c34
+                                }
+                                else
+                                {
+                                    //6b98
+                                    if ((td->flags & 0x2000) && (fp_0x34 > 64))
+                                    {
+                                        //6ba4
+                                        mentor_start_edma_transfer(hc, sb, td, r7, 
+                                            td->xfer_buffer_paddr + td->bytes_xfered,
+                                            fp_0x34);
+                                        //->6c34
+                                    }
+                                    else
+                                    {
+                                        //6bbe
+                                        MENTOR_ReadFIFO(hc, r7, 
+                                            td->xfer_buffer + td->bytes_xfered,
+                                            fp_0x34);
+
+                                        HW_Write16(hc, MUSB_RXCSR(r7), r4 & ~1);
+                                        //->6c2e
+                                        (td->Func_0x38)(hc, td, fp_0x34, 0);
+                                    }
+                                }
+                            }
+                        }
+                    } //if (fp_0x2c/*r2*/ & (1 << 2))
+                    else
+                    {
+                        //6be6
+                        uint32_t r3 = HW_Read16(hc, MUSB_TXCSR(r7));
+
+                        sb->Data_0x20 = (r3 & TXCSR_DATA_TOGGLE) != 0;
+                        r3 &= 0xffff;
+
+                        int r4;
+                        if ((r3 & 0xa4) == 0)
+                        {
+                            r4 = 0;
+                        }
+                        else
+                        {
+                            //6bfe
+                            if (r3 & TXCSR_RX_STALL)
+                            {
+                                r4 = 0x04;
+                            }
+                            else
+                            {
+                                r4 = 0x0f;
+                            }
+
+                            if (fp_0x2c & 0x2400)
+                            {
+                                MENTOR_AbortDMA_TX(hc, sb);
+                            }
+                        }
+
+                        if (((td->flags & 0xff0000) == 0) || (r4 != 0))
+                        {
+                            (td->Func_0x38)(hc, td, td->Data_0x10, r4);
+                        }
+                    }
+                } //if (sb->bData_0x1f == 0)
+            }
+        }
+        //6c34
+//        sl += 16;
+    } //for (r7 = 1; fp != 0; r7++, fp >>= 1)
+    //6c40
+    return 0;
 }
 
 
@@ -4248,6 +4425,715 @@ int mentor_ctrl_transfer_abort(void* chdl,
     MUSB_MUTEX_UNLOCK(Data_4, 0x449);
     //46ba
     return 0;
+}
+
+
+/* 0x00008284 - todo */
+int MENTOR_AllocEtd(hctrl_t* hc, 
+    struct Struct_0xa4* r6, 
+    int r8)
+{
+    int r4 = r6->num;
+    if ((r4 > 0) && (r4 < hc->Data_0x1c))
+    {
+        //->574c
+        return r4;
+    }
+    //5634
+    for (r4 = 1; (r4 < hc->Data_0x1c) && (hc->Data_0xdc[r4] != NULL); r4++)
+    {
+    }
+    //564a
+    if (r4 >= hc->Data_0x1c)
+    {
+        //564a
+        if (hc->wData_0xe8 != 0)
+        {
+            //5650
+            for (r4 = 1; (r4 < hc->Data_0x1c) && 
+                (hc->Data_0xdc[r4]->Data_0x10 & 0x01); r4++)
+            {
+                //loc_832c
+            }
+
+            if (r4 >= hc->Data_0x1c)
+            {
+                //->loc_84ec
+                return -1;
+            }
+            //5668
+            if (MENTOR_FreeEtd(hc, hc->Data_0xdc[r4]) < 0)
+            {
+                //5672
+                mentor_slogf(hc, 12, 2, 1, 
+                    "%s - %s: Trying to relinquish an unreserved ETD failed",
+                    "devu-dm816x-mg.so", "MENTOR_AllocEtd");
+            }
+            //5692
+            hc->wData_0xe8 = 0;
+        }
+        else
+        {
+            //5696
+            for (r4 = hc->Data_0x1c - 1; (r4 > 0) && 
+                (hc->Data_0xdc[r4]->Data_0x10 & 0x01); r4--)
+            {
+            }
+
+            if (r4 <= 0)
+            {
+                return -1;
+            }
+            //loc_83e8
+            if (MENTOR_FreeEtd(hc, hc->Data_0xdc[r4]) < 0)
+            {
+                //56ac
+                mentor_slogf(hc, 12, 2, 1, 
+                    "%s - %s: Trying to relinquish an unreserved ETD failed",
+                    "devu-dm816x-mg.so", "MENTOR_AllocEtd");
+            }
+            //56cc
+            hc->wData_0xe8 = 1;
+            //->56ea
+        }
+    } //if (r4 >= hc->Data_0x1c)
+    //56ea
+    r6->Data_0x30 = mentor_fifo_alloc(hc, r4, r6, r8);
+    if (r6->Data_0x30 == 0)
+    {
+        //56fa
+        mentor_slogf(hc, 12, 2, 1, 
+            "%s - %s: Allocate FIFO failed, bEnd=%d, maxPacketSize=%d",
+            "devu-dm816x-mg.so", "MENTOR_AllocEtd",
+            r4, r6->mps);
+
+        return -1;
+    }
+    //5726
+    if (hc->flags & (1 << 12))
+    {
+        //573e
+        if (0 != mentor_edma_alloc_channel(hc, r4))
+        {
+            //->5720
+            return -1;
+        }
+    }
+    //572c
+    r6->num = r4;
+    r6->bData_0x1f = 0;
+    hc->Data_0xdc[r4] = r6;
+    //574c
+    return r4;
+}
+
+
+/* todo */
+void MENTOR_EtdConfigureTX(hctrl_t* hc, 
+    struct Struct_0xa4* b, uint32_t c)
+{
+    int r4 = b->transferType;
+
+    HW_Write16_(hc->Data_0x14, MUSB_RXCSR(c), 0);
+
+    if (b->Data_0x20 != 0)
+    {
+        HW_Write16_(hc->Data_0x14, MUSB_TXCSR(c), 0x2308);
+    }
+    else
+    {
+        HW_Write16_(hc->Data_0x14, MUSB_TXCSR(c), 0x2048);
+    }
+
+    HW_Write16_(hc->Data_0x14, MUSB_TXFUNCADDR(c), (b->Data_0x14 >> 4) & 0x7f);
+
+    if (b->bData_0x1c != 0x40)
+    {
+        HW_Write8_(hc->Data_0x14, MUSB_TXHUBADDR(c), b->bData_0x1d);
+        HW_Write8_(hc->Data_0x14, MUSB_TXHUBPORT(c), b->bData_0x1e);
+    }
+
+    HW_Write16_(hc->Data_0x14, MUSB_TXTYPE(c), 
+        b->bData_0x1c | (b->Data_0x14 & 0x0f) | (r4 << 4));
+    
+    if (r4 & 0x01)
+    {
+        HW_Write8_(hc->Data_0x14, MUSB_TXINTERVAL(c), b->Data_0x24);
+    }
+    else
+    {
+        HW_Write8_(hc->Data_0x14, MUSB_TXINTERVAL(c), 0);
+    }
+}
+
+
+/* todo */
+void MENTOR_EtdConfigureRX(hctrl_t* hc, 
+    struct Struct_0xa4* b, uint32_t c)
+{
+    int r4 = b->transferType;
+
+    HW_Write16_(hc->Data_0x14, MUSB_TXCSR(c), 0);
+
+    HW_Write16_(hc->Data_0x14, MUSB_RXFUNCADDR(c), (b->Data_0x14 >> 4) & 0x7f);
+
+    if (b->bData_0x1c != 0x40)
+    {
+        HW_Write8_(hc->Data_0x14, MUSB_RXHUBADDR(c), b->bData_0x1d);
+        HW_Write8_(hc->Data_0x14, MUSB_RXHUBPORT(c), b->bData_0x1e);
+    }
+
+    HW_Write8_(hc->Data_0x14, MUSB_RXTYPE(c), 
+        (b->bData_0x1c | (r4 << 4)) | (b->Data_0x14 & 0x0f));
+
+#if 0
+    int r2_ = HW_Read16(hc, MUSB_RXCSR(c));
+#endif
+
+    if (b->transferType & 0x01)
+    {
+        HW_Write8_(hc->Data_0x14, MUSB_RXINTERVAL(c), b->Data_0x24);
+    }
+    else
+    {
+        HW_Write8_(hc->Data_0x14, MUSB_NAKLIMIT0(c), 0);
+    }
+
+    if (b->Data_0x20 != 0)
+    {
+        HW_Write16_(hc->Data_0x14, MUSB_RXCSR(c), 0x610);
+    }
+    else
+    {
+        HW_Write16_(hc->Data_0x14, MUSB_RXCSR(c), 0x90);
+    }
+
+    HW_Write16_(hc->Data_0x14, MUSB_RXCSR(c), 0x10);
+}
+
+
+/* todo */
+void MENTOR_StartEtd(hctrl_t* hc/*r7*/, 
+    struct _musb_transfer* r4)
+{
+    struct Struct_0xa4* r6 = r4->Data_0x30;
+    uint32_t m = 0;
+
+    if (r6->num >= 0)
+    {
+        //4304
+        r6->bData_0x1f = 0;
+
+        int ep_num/*fp_0x30*/ = r6->num;
+        hc->Data_0xd8[ep_num] = r4;
+        r4->flags |= 0x100;
+
+        //int r7 = ep_num * 16;
+
+        uint16_t wCsr = HW_Read16(hc, 0x102 + ep_num * 16);
+        uint32_t retry/*r5*/ = 1000;
+        while (retry && (wCsr & 0x03))
+        {
+            //loc_6d68
+            nanospin_ns(1000);
+
+            wCsr = HW_Read16(hc, 0x102 + ep_num * 16);
+            retry--;
+        }
+
+#if 0        
+        if (retry <= 0)
+        {
+            //loc_6d9c
+            mentor_slogf(hc, 12, 2, 1, 
+                " %s : MENTOR_StartEtd - %s: TX FIFO still not Empty (%x)",
+                "devu-dm816x-mg.so", "MENTOR_StartEtd", wCsr);
+        }
+#endif                
+        //434e
+        uint32_t r5 = r4->xfer_length - r4->bytes_xfered;
+
+        if ((r4->flags & (1 << 10)) &&
+            (r6->transferType == USB_ATTRIB_BULK) &&
+            (((hc->flags & (1 << 9)) && ((r4->flags & (1 << 2)))) || 
+                ((hc->flags & (1 << 10)) && ((r4->flags & (1 << 3))))) &&
+            //4378
+            (r5 > r6->mps) &&
+            ((r6->mps & 0x3f) == 0))
+        {
+            //4382            
+            if (r5 > hc->Data_0xa0)
+            {
+                r5 = hc->Data_0xa0;
+            }
+
+            r4->flags |= 0x800;
+            r4->Data_0x10 = r5;
+            //->43a8
+        }
+        else
+        {
+            //4396
+            r4->flags &= ~0x800;
+
+            if (r5 > r6->Data_0x30->Data_0)
+            {
+                r5 = r6->Data_0x30->Data_0;
+            }
+            r4->Data_0x10 = r5;
+        }
+        //43a8
+        if (r4->flags & 0x04)
+        {
+            //43b8
+            uint16_t rxCsr = HW_Read16(hc, 0x106 + ep_num * 16);
+
+            if (hc->flags & (1 << 13))
+            {
+                if ((rxCsr & 0x200) != 0)
+                {
+                    if (r6->Data_0x20 == 0)
+                    {
+                        HW_Write16(hc, 0x106 + ep_num * 16, 
+                            rxCsr | 0x80);
+
+                        rxCsr = HW_Read16(hc, 0x106 + ep_num * 16);
+                    }
+                    //43e8
+                }
+                else
+                {
+                    //43d8
+                    if (r6->Data_0x20 != 0)
+                    {
+                        HW_Write16(hc, 0x106 + ep_num * 16, 
+                            rxCsr | 0x600);
+                        
+                        rxCsr = HW_Read16(hc, 0x106 + ep_num * 16);
+                    }
+                    //43e8
+                }
+            }
+            //43e8
+            if ((r6->transferType == USB_ATTRIB_ISOCHRONOUS/*1*/) || 
+                (r6->transferType == USB_ATTRIB_INTERRUPT/*3*/))
+            {
+                rxCsr |= (1 << 12); //0x1000; /* PID Error ?*/
+            }
+
+            if (r4->flags & 0x800)
+            {
+                //4400: write RXMAXP
+                HW_Write16(hc, 0x104 + ep_num * 16, r6->mps);
+
+                rxCsr &= 0x2792;
+
+                HW_Write16(hc, 0x106 + ep_num * 16, rxCsr);
+
+                if (r4->flags & (1 << 10))
+                {
+                    //4414
+                    mentor_start_dma_transfer(hc, r6, r4, 1,
+                        ep_num, r6->Data_0x2c, 
+                        r4->xfer_buffer_paddr + r4->bytes_xfered, 
+                        r5);
+                }
+                //4434
+                rxCsr = HW_Read16(hc, 0x106 + ep_num * 16);
+                rxCsr |= RXCSR_DMA_REQ_EN 
+//                    | RXCSR_AUTOREQ | RXCSR_AUTOCLEAR
+//                    | RXCSR_DMA_REQ_MODE
+                    | RXCSR_RXPKTRDY 
+                    | RXCSR_ERROR 
+                    | RXCSR_DATA_ERROR 
+                    | RXCSR_REQ_PKT 
+                    | RXCSR_RX_STALL; //0x6d;
+//                r0 &= ~RXCSR_REQ_PKT;
+
+                HW_Write16(hc, 0x106 + ep_num * 16, rxCsr);
+                //->45e6
+            } //if (r4->flags & 0x800)
+            else
+            {
+                //444a
+                int r0 = (r4->Data_0x10 / r6->mps);
+                if (r0 > 1)
+                {
+                    m = (r4->Data_0x10 / r6->mps) - 1;
+                }
+                //446e: write RXMAXP
+                HW_Write16(hc, 0x104 + ep_num * 16, r6->mps | (m << 11));
+
+                if (r4->flags & (1 << 10))
+                {
+                    //447e
+                    rxCsr = (rxCsr & 0x2792) | (RXCSR_DMA_REQ_EN | RXCSR_AUTOREQ); //0x6000;
+
+                    mentor_start_dma_transfer(hc, r6, r4, 1,
+                        ep_num, r6->Data_0x2c,
+                        r4->xfer_buffer_paddr + r4->bytes_xfered,
+                        r5);
+                    //->44b0
+                }
+                else
+                {
+                    //44aa
+                    rxCsr &= ~0x6000;
+                }
+                //44b0: write RxCSR
+                HW_Write16(hc, 0x106 + ep_num * 16, rxCsr | 0x6d); //01101101
+                    //Clear: RxStall, DataError/NAK Timeout, Error, RxPktRdy
+                    //Set: ReqPkt
+            }
+            //->45ea
+        } //if (r4->flags & 0x04)
+        else
+        {
+            //44c0
+            //uint32_t sl = r6->mps;
+            int r0_ = ((r4->Data_0x10 + r6->mps - 1) / r6->mps);
+            if (r0_ > 1)
+            {
+                m = ((r4->Data_0x10 + r6->mps - 1) / r6->mps) - 1;
+            }
+            //44e8
+            uint16_t txCsr = HW_Read16(hc, 0x102 + ep_num * 16);
+
+            if (r4->flags & 0x600)
+            {
+                //44fc
+                if (r4->flags & 0x800)
+                {
+                    //4502
+                    HW_Write16(hc, 0x100 + ep_num * 16, r6->mps);
+
+                    txCsr &= ~0x84a5; //0x7b5a;
+
+                    HW_Write16(hc, 0x102 + ep_num * 16, txCsr | 
+                        TXCSR_MODE/*0x2000*/);
+
+                    mentor_start_dma_transfer(hc, r6, r4, 1,
+                        ep_num, r6->Data_0x2c, 
+                        r4->xfer_buffer_paddr + r4->bytes_xfered, r5);
+
+                    HW_Write16(hc, 0x102 + ep_num * 16, 
+                        HW_Read16(hc, 0x102 + ep_num * 16) |
+#if 0 //MB86H60?                        
+                        TXCSR_AUTOSET |
+#endif                        
+                        TXCSR_DMA_REQ_EN | //0x1480
+                        TXCSR_DMA_REQ_MODE |
+                        TXCSR_NAK_TIMEOUT |
+                        TXCSR_RX_STALL | //0x26
+                        TXCSR_ERROR |
+                        TXCSR_FIFO_NOT_EMPTY);
+                    //->45e6
+                } //if (r4->flags & 0x800)
+                else
+                {
+                    //454c
+                    HW_Write16(hc, 0x100 + ep_num * 16, r6->mps | (m << 11));
+
+                    if (r4->flags & 0x400)
+                    {
+                        txCsr &= ~TXCSR_DMA_REQ_MODE/*0x400*/;
+
+                        HW_Write16(hc, 0x102 + ep_num * 16, 
+                            txCsr | 
+#if 0 //MB86H60?
+                            TXCSR_AUTOSET |
+#endif                            
+                            TXCSR_MODE |
+                            TXCSR_DMA_REQ_EN |
+                            TXCSR_NAK_TIMEOUT |
+                            TXCSR_RX_STALL |
+                            TXCSR_ERROR |
+                            TXCSR_FIFO_NOT_EMPTY /*0x30a6*/);
+                    }
+                    //loc_7118
+                    mentor_start_dma_transfer(hc, r6, r4, 
+                        ((r4->flags ^ (1 << 9)) >> 9) & 1,
+                        ep_num, r6->Data_0x2c,
+                        r4->xfer_buffer_paddr + r4->bytes_xfered, r5);
+                    //->45ea
+                }
+            } //if (r4->flags & 0x600)
+            else
+            {
+                //4596
+                HW_Write16(hc, 0x100 + ep_num * 16, r6->mps | (m << 11));
+
+                if ((r4->flags & (1 << 13)) && (r5 > 64))
+                {
+                    //45ac
+                    mentor_start_edma_transfer(hc, r6, r4,
+                        ep_num,
+                        r4->xfer_buffer_paddr, r5);
+                    //->45ea
+                }
+                else
+                {
+                    //45c0
+                    MENTOR_LoadFIFO(hc, ep_num, r4->xfer_buffer, r5);
+
+                    txCsr &= ~0x9400;
+
+                    HW_Write16(hc, 0x102 + ep_num * 16, 
+                        txCsr | 0x2080 | 
+                        TXCSR_RX_STALL | //0x27
+                        TXCSR_ERROR |
+                        TXCSR_FIFO_NOT_EMPTY |
+                        TXCSR_TXPKTRDY);
+                }
+            }
+        }
+    }
+    //45ea
+}
+
+
+/* todo */
+int mentor_bulk_transfer(
+#if 0    
+    struct USB_Controller* ctrl, 
+    struct Struct_10bab4* r8, 
+    struct Struct_112b08* r2, 
+    void* buffer/*fp_0x34*//*fp52*/, 
+#else
+    void* chdl,
+    iousb_transfer_t* urb/*r9*/,
+    iousb_endpoint_t* iousbep,
+    uint8_t* buffer/*r8*/,
+    uint32_t length/*fp4*/, 
+    uint32_t flags/*sb*//*arg4*/)
+#endif
+{
+    hctrl_t* hc/*r6*/ = ((struct _usb_hcd*)chdl)->hc_data;
+    struct Struct_0xa4* r5 = iousbep->user;
+    struct _musb_transfer* td; //r4;
+
+    MUSB_MUTEX_LOCK(Data_4, 0x54a);
+    //57aa
+    td = MENTOR_TD_Setup(hc, urb, r5, flags/*sb*/);
+    if (td == NULL)
+    {
+        MUSB_MUTEX_LOCK(Data_4, 0x54d);
+        //57da
+        urb->status = 0x2000010;
+        return 12; //->loc_932c
+    }
+    //57de
+    td->xfer_buffer = (uint32_t) buffer; //fp_0x34;
+    td->xfer_buffer_paddr = urb->buffer_paddr; //Data_0x5c->pData;
+    td->xfer_length = length;
+
+    if (hc->flags & 0x01)
+    {
+        //57fa
+        if (flags/*sb*/ & 0x20/*PIPE_FLAGS_MULTI_XFER?*/)
+        {
+            //5800
+            struct _musb_transfer_Inner_0x18* r2 = urb->xdata_ptr;
+            struct _musb_transfer_Inner_0x18_Inner_8* r3 = r2->Data_8;
+
+            td->Data_0x18 = r2;
+            td->Data_0x1c__ = r3;
+            td->Data_0x20 = r2->wData_0 - 1;
+            td->Data_0x24 = 0;
+            td->xfer_buffer_paddr = r3->Data_0;
+            td->xfer_length = r3->Data_8;
+
+            if (flags/*sb*/ & 0x04)
+            {
+                //5824
+                td->Func_0x3c = td->Func_0x38 = MENTOR_ProcessMultiInComplete;
+                //->583c
+            }
+            else
+            {
+                //582c
+                td->Func_0x38 = MENTOR_ProcessMultiOutComplete;
+
+                if (hc->Data_0x40 == 0x400)
+                {
+                    td->Func_0x3c = MENTOR_ProcessMultiOutComplete;
+                }
+                else
+                {
+                    td->Func_0x3c = MENTOR_ProcessOutDMAComplete;
+                }
+            }
+
+            td->flags |= hc->Data_0x40;
+            //->58a4
+        } //if (flags/*sb*/ & 0x20/*PIPE_FLAGS_MULTI_XFER?*/)
+        else
+        {
+            //5846
+            if ((length/*fp4*/ > r5->mps) || 
+                (length/*fp4*/ > 0x40))
+            {
+                //5854
+                if ((((uint32_t)buffer/*fp_0x34*/) & 0x03) == 0)
+                {
+                    td->flags |= hc->Data_0x40;
+                }
+            }
+            //5862
+            if (flags/*sb*/ & 0x04)
+            {
+                //588a
+                td->Func_0x3c = td->Func_0x38 = MENTOR_ProcessInComplete;
+                //->0x00009088
+            }
+            else
+            {
+                //5868
+                td->Func_0x38 = MENTOR_ProcessOutComplete;
+
+                if (hc->Data_0x40 == 0x400)
+                {
+                    td->Func_0x3c = MENTOR_ProcessOutComplete;
+                }
+                else
+                {
+                    //589e
+                    td->Func_0x3c = MENTOR_ProcessOutDMAComplete;
+                }
+            }
+        }
+    } //if (hc->flags & 0x01)
+    else
+    {
+        //5878
+        if (hc->flags & (1 << 12))
+        {
+            td->flags |= 0x2000;
+        }
+
+        if (flags/*sb*/ & 0x04/*PIPE_FLAGS_TOKEN_IN?*/)
+        {
+            //588a
+            td->Func_0x3c = td->Func_0x38 = MENTOR_ProcessInComplete;
+            //->0x00009088
+        }
+        else
+        {
+            //5892
+            td->Func_0x38 = MENTOR_ProcessOutComplete;
+
+            if (td->flags & (1 << 13))
+            {
+                //589e
+                td->Func_0x3c = MENTOR_ProcessOutDMAComplete;
+            }
+            else
+            {
+                td->Func_0x3c = MENTOR_ProcessOutComplete;
+            }
+        }
+    }
+    //58a4
+    MUSB_LOCK
+
+    SIMPLEQ_INSERT_TAIL(&r5->Data_8, td, link);
+
+    if ((r5->Data_0x10 & (1 << 0)) == 0)
+    {
+        //58c8
+        MUSB_UNLOCK
+
+        if (r5->num == -1)
+        {
+            //58d2
+            if (MENTOR_AllocEtd(hc, r5, td->flags & 0x04) < 0)
+            {
+                //58e4
+                mentor_slogf(hc, 12, 2, 1, "%s - %s Call to MENTOR_AllocEtd() failed",
+                    "devu-dm816x-mg.so", "mentor_bulk_transfer");
+
+                MUSB_LOCK
+                //590a
+                r5->Data_8.sqh_first = SIMPLEQ_NEXT(td, link);
+                if (r5->Data_8.sqh_first == NULL)
+                {
+                    r5->Data_8.sqh_last = &r5->Data_8.sqh_first;
+                }
+                //5916
+                SIMPLEQ_INSERT_TAIL(&hc->transfer_free_q, td, link);
+
+                MUSB_UNLOCK
+                //592c
+                MUSB_MUTEX_UNLOCK(Data_4, 0x5a8);
+                //594c
+                urb->status = 0x10;
+                return 12; //->loc_932c
+            } //if (MENTOR_AllocEtd() < 0)
+            //5956
+            if (flags/*sb*/ & 0x04/*PIPE_FLAGS_TOKEN_IN?*/)
+            {
+                //5962
+                MENTOR_EtdConfigureRX(hc, r5, r5->num);
+                //->0x00009244
+            }
+            else
+            {
+                //5968
+                MENTOR_EtdConfigureTX(hc, r5, r5->num);
+            }
+        }
+        //596c
+        if ((td->flags & 0x600) && 
+            (r5->Data_0x38 == 0))
+        {
+            //5978
+            r5->Data_0x38 = mentor_alloc_dma_sched(hc, r5);
+            if (r5->Data_0x38 == 0)
+            {
+                td->flags &= ~0x600;
+            }
+            //598c
+            if (((hc->flags & 0x04) == 0) &&
+                (r5->Data_0x2c == -1))
+            {
+                //5998
+                if (mentor_claim_dma_channel(hc, td, 
+                        r5->num, &r5->Data_0x2c) != 0)
+                {
+                    td->flags &= ~0x600;
+                }
+            }
+            //59b0
+        }
+        //59b0
+        MUSB_LOCK
+
+        td = r5->Data_8.sqh_first;
+        if (td != NULL)
+        {
+            //59ba
+            r5->Data_0x10 |= (1 << 0);
+
+            MUSB_UNLOCK
+
+            MENTOR_StartEtd(hc, td);
+            //->59d8
+        }
+        else
+        {
+            //59d2
+            MUSB_UNLOCK
+        }
+    } //if ((r5->Data_0x10 & (1 << 0)) == 0)
+    else
+    {
+        //59d4
+        MUSB_UNLOCK
+    }
+    //59d8
+    MUSB_MUTEX_UNLOCK(Data_4, 0x5d0);
+    //59fa
+    return 0;    
 }
 
 

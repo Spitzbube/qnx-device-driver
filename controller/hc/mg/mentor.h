@@ -83,6 +83,45 @@ typedef struct _hctrl_t hctrl_t;
 	#define CSR0_DATA_TOGGLE_WR_EN			( 1 << 10 )
 	#define CSR0_DISPING					( 1 << 11 )
 
+#define MUSB_TXCSR(n)				( 0x102 + ( 0x10 * (n) ) ) // 16-bit
+#define MUSB_IDX_TXCSR				0x12	// 16-bit
+	/* peripheral mode */
+	#define TXCSR_TXPKTRDY					( 1 << 0 )
+	#define TXCSR_FIFO_NOT_EMPTY			( 1 << 1 )
+	#define TXCSR_UNDERRUN					( 1 << 2 )
+	#define TXCSR_FLUSHFIFO					( 1 << 3 )
+	#define TXCSR_SEND_STALL				( 1 << 4 )
+	#define TXCSR_SENT_STALL				( 1 << 5 )
+	#define TXCSR_CLR_DATA_TOGGLE			( 1 << 6 )
+	#define TXCSR_INCOMP_TX					( 1 << 7 )
+	#define TXCSR_DMA_REQ_MODE				( 1 << 10 )
+	#define TXCSR_DMA_REQ_TYPE0				( 0 << 10 )
+	#define TXCSR_DMA_REQ_TYPE1				( 1 << 10 )
+	
+	#define TXCSR_FORCE_DATA_TOGGLE			( 1 << 11 )
+	#define TXCSR_DMA_REQ_EN				( 1 << 12 )
+	#define TXCSR_MODE						( 1 << 13 )
+	#define TXCSR_ISO						( 1 << 14 )
+	#define TXCSR_AUTOSET					( 1 << 15 )
+	
+	/* host mode */
+	//#define TXCSR_TXPKTRDY				( 1 << 0 )
+	//#define TXCSR_FIFO_NOT_EMPTY			( 1 << 1 )
+	#define TXCSR_ERROR						( 1 << 2 )
+	//#define TXCSR_FLUSHFIFO				( 1 << 3 )
+	#define TXCSR_SETUP_PKT					( 1 << 4 )
+	#define TXCSR_RX_STALL					( 1 << 5 )
+	//#define TXCSR_CLR_DATA_TOGGLE			( 1 << 6 )
+	//#define TXCSR_INCOMP_TX				( 1 << 7 )
+	#define TXCSR_NAK_TIMEOUT				( 1 << 7 )
+	#define TXCSR_DATA_TOGGLE				( 1 << 8 )
+	#define TXCSR_DATA_TOGGLE_WR_EN			( 1 << 9 )
+	//#define TXCSR_DMA_REQ_MODE			( 1 << 10 )
+	//#define TXCSR_FORCE_DATA_TOGGLE		( 1 << 11 )
+	//#define TXCSR_DMA_REQ_EN				( 1 << 12 )
+	//#define TXCSR_MODE					( 1 << 13 )
+	//#define TXCSR_AUTOSET					( 1 << 15 )
+
 
 #define MUSB_RXCSR(n)				( 0x106 + ( 0x10 * (n) ) ) // 16-bit
 #define MUSB_IDX_RXCSR				0x16	// 16-bit
@@ -127,6 +166,8 @@ typedef struct _hctrl_t hctrl_t;
 
 #define MUSB_COUNT0					0x108	// 16-bit
 
+#define MUSB_RXCOUNT(n)				( 0x108 + ( 0x10 * (n) ) ) // 16-bit
+
 #define MUSB_TXTYPE(n)				( 0x10a + ( 0x10 * (n) ) ) // 8-bit
 #define MUSB_IDX_TXTYPE				0x1a	// 8-bit
 	/* host only */
@@ -151,11 +192,30 @@ typedef struct _hctrl_t hctrl_t;
 #define MUSB_TXINTERVAL(n)			( 0x10b + ( 0x10 * (n) ) ) // 8-bit
 #define MUSB_IDX_TXINTERVAL			0x1b	// 8-bit
 
+#define MUSB_RXTYPE(n)				( 0x10c + ( 0x10 * (n) ) ) // 8-bit
 
+#define MUSB_RXINTERVAL(n)			( 0x10d + ( 0x10 * (n) ) ) // 8-bit
 
 struct Struct_0x94
 {
     struct _musb_transfer* Data_0; //0
+};
+
+
+struct _musb_transfer_Inner_0x18_Inner_8
+{
+    int Data_0; //0
+    int fill_4; //4
+    int Data_8; //8
+    //???
+};
+
+struct _musb_transfer_Inner_0x18
+{
+    uint16_t wData_0; //0
+    int fill_4; //4
+    struct _musb_transfer_Inner_0x18_Inner_8* Data_8; //8
+    //???
 };
 
 
@@ -247,13 +307,35 @@ struct Struct_0xe4
 };
 
 
+struct Mentor_Controller_Inner_0x8c
+{
+    int fill_0[6]; //0
+    struct fp_0x34_Inner_0x18
+    {
+        int fill_0[2]; //8
+        int Data_8; //8
+        uint32_t Data_0xc; //12 = 0xc
+        struct fp_0x34_Inner_0x18_Inner_0x10
+        {
+            int Data_0; //0
+            int Data_4; //4
+            int Data_8; //8
+            struct fp_0x34_Inner_0x18* Data_0xc; //0xc 
+            //16 = 0x10
+        }* Data_0x10; //16 = 0x10
+        //0x14
+    } Data_0x18[]; //0x18, size???
+    //???
+};
+
+
 struct _hctrl_t {
     usb_hcd_t* uhc; //0
     pthread_mutex_t Data_4; //4
     pthread_mutex_t Data_0xc; //12
     int Data_0x14; //0x14
     uint32_t Data_0x18; //0x18 = 24
-    uint32_t Data_0x1c; //0x1c
+    uint32_t Data_0x1c; //0x1c = 28
     int fill_0x20[2]; //0x20
     struct _hctrl_t_Inner_0x28* Data_0x28; //0x28
     int Data_0x2c; //0x2c
@@ -273,7 +355,7 @@ struct _hctrl_t {
     int Data_0x68; //0x68
     int Data_0x6c; //0x6c
     int flags; //0x70
-    int fill_0x74; //0x74
+    int Data_0x74; //0x74
     int prio; //0x78 = 120
     struct sigevent intr_event; //0x7c
     int Data_0x8c; //0x8c
@@ -281,7 +363,7 @@ struct _hctrl_t {
     int num_td; //0x94
     uint32_t verbosity; //152 = 0x98
     int Data_0x9c; //0x9c
-    int Data_0xa0; //0xa0
+    uint32_t Data_0xa0; //0xa0
     char* fconfig_string; //0xa4
     int fill_0xa8; //0xa8
     SIMPLEQ_HEAD(, _musb_transfer) transfer_free_q; //0xac
@@ -294,10 +376,10 @@ struct _hctrl_t {
     struct Struct_0xa4* Data_0xd0; //0xd0
     struct Struct_0xa4* Data_0xd4; //0xd4
     int* Data_0xd8; //0xd8
-    void** Data_0xdc; //0xdc
+    struct Struct_0xa4** Data_0xdc; //0xdc
     int fill_0xe0; //0xe0
     intrspin_t Data_0xe4; //0xe4
-    uint16_t fill_0xe8; //0xe8
+    uint16_t wData_0xe8; //0xe8
     uint16_t wData_0xea; //0xea
     int fill_0xec[2]; //0xec
     void* args_copy; //0xf4
@@ -319,6 +401,10 @@ static inline void HW_Write16( hctrl_t* hc, uint32_t offset, uint16_t data ) {
 	*((volatile uint16_t*)(hc->Data_0x14 + offset)) = data;
 }
 
+static inline void HW_Write16_( uint32_t iobase, uint32_t offset, uint16_t data ) {
+	*((volatile uint16_t*)(iobase + offset)) = data;
+}
+
 static inline void HW_Write16Or( hctrl_t* hc, uint32_t offset, uint16_t data ) {
 	data = HW_Read16( hc, offset ) | data;
 	HW_Write16( hc, offset, data);
@@ -327,6 +413,10 @@ static inline void HW_Write16Or( hctrl_t* hc, uint32_t offset, uint16_t data ) {
 
 static inline void HW_Write8( hctrl_t* hc, uint32_t offset, uint8_t data ) {
 	*((volatile uint8_t*)(hc->Data_0x14 + offset)) = data;
+}
+
+static inline void HW_Write8_( uint32_t iobase, uint32_t offset, uint8_t data ) {
+	*((volatile uint8_t*)(iobase + offset)) = data;
 }
 
 
