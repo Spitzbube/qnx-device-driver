@@ -23,6 +23,7 @@ struct _hctrl_t;
 #define USB_CONTROLLER_PRIV_T struct _hctrl_t
 #include <sys/io-usb.h>
 #include "my-io-usb.h"
+#include <sys/io-usb_dcd.h>
 
 
 
@@ -2034,54 +2035,41 @@ void MENTOR_URB_complete(struct _hctrl_t* r5,
 
 
 /* 0x00007e38 - todo */
-void mentor_bottom_half(struct _hctrl_t* r5)
+void mentor_bottom_half(struct _hctrl_t* hc)
 {
+    struct _musb_transfer* td;
+
 #if 0
     fprintf(stderr, "mentor_bottom_half: TODO\n");
 #endif
 
-//    int* fp_0x34 = &r5->Data_0x98;
-//    pthread_mutex_t* r6 = &r5->Data_4;
-//    struct intrspin* r8 = r5->Data_0xd0;
-//    int sl = 0x150;
-
     while (1)
     {
-        //0x00007e7c
-        InterruptLock(&r5->Data_0xd0);
+        MUSB_LOCK
 
-        struct _musb_transfer* r4 = SIMPLEQ_FIRST(&r5->transfer_complete_q);
-        if (r4 == NULL)
+        td = SIMPLEQ_FIRST(&hc->transfer_complete_q);
+        if (td == NULL)
         {
-            //->0x00007f50
             break;
         }
-        //0x00007ebc
-        SIMPLEQ_REMOVE_HEAD(&r5->transfer_complete_q, link);
 
-        InterruptUnlock(&r5->Data_0xd0);
+        SIMPLEQ_REMOVE_HEAD(&hc->transfer_complete_q, link);
 
-        if (pthread_mutex_lock(&r5->Data_4) != 0)
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "C:/projects/beaglebone/bsp-ti-beaglebone-src/src/hardware/devu/hc/mg/mentor.c", 0x943);
-        }
-        //0x00007f0c
-        MENTOR_URB_complete(r5, 
-            r4->Data_0x30, 
-            r4, 
-            r4->Data_0x30->transferType,
-            r4->status);
+        MUSB_UNLOCK
 
-        if (pthread_mutex_unlock(&r5->Data_4) != 0)
-        {
-            fprintf(stderr, "mutex lock %s %d\n",
-                "C:/projects/beaglebone/bsp-ti-beaglebone-src/src/hardware/devu/hc/mg/mentor.c", 0x946);
-        }
-        //->0x00007e7c
+        MUSB_MUTEX_LOCK(Data_4, 0x943);
+
+        MENTOR_URB_complete(hc, 
+            td->Data_0x30, 
+            td, 
+            td->Data_0x30->transferType,
+            td->status);
+
+        MUSB_MUTEX_UNLOCK(Data_4, 0x946);
+
     } //while (1)
-    //0x00007f50
-    InterruptUnlock(&r5->Data_0xd0);
+    
+    MUSB_UNLOCK
 }
 
 
@@ -2157,38 +2145,43 @@ const struct sigevent * mentor_interrupt_handler(void* a, int b)
 /* 0x00007f88 - todo */
 static void* mentor_interrupt_thread(void* a)
 {
-    fprintf(stderr, "mentor_interrupt_thread: TODO\n");
 
-    struct USB_Controller* r7 = a;
-    struct _hctrl_t* r4 = r7->hc_data;
+    st_USB_Hc* r7 = a;
+    struct _hctrl_t* hc = r7->hc_data;
 
     if (ThreadCtl(1, 0) == -1)
     {
-        mentor_slogf(r4, 12, 2, 1, "%s - %s: Unable to obtain I/O privity.",
+        mentor_slogf(hc, 12, 2, 1, "%s - %s: Unable to obtain I/O privity.",
             "devu-dm816x-mg.so", "mentor_interrupt_thread");
         return (void*)-1;
     }
     //loc_8000
-    SIGEV_PULSE_INIT( &r4->intr_event, r4->coid, 
+    SIGEV_PULSE_INIT( &hc->intr_event, hc->coid, 
         getprio(0), MUSB_PULSE_INTR, 0 );
 
-    while ((r4->flags & 0x10) == 0)
+    while ((hc->flags & 0x10) == 0)
     {
         //loc_803c
         delay(1);
     }
     //loc_8050
-#ifdef MB86H60
-    r4->irq = MB86H60_INTR_USB; //r7->Data_4->bData_0x14;
+#if 0//def MB86H60
+    hc->irq = MB86H60_INTR_USB;
 #else
-    r4->irq = ((struct pci_dev_info*)(r7->pci_inf))->Irq;
+    hc->irq = r7->pci_inf->Irq;
 #endif
 
-    r4->intr_id = InterruptAttach(r4->irq, 
-        mentor_interrupt_handler, r4, 0xe8, 8);
-    if (r4->intr_id == -1)
+    hc->intr_id = InterruptAttach(hc->irq, 
+        mentor_interrupt_handler, hc, 0xe8, 8);
+
+#if 0
+    fprintf(stderr, "mentor_interrupt_thread: hc->irq=%d, hc->intr_id=%d\n",
+        hc->irq, hc->intr_id);
+#endif
+            
+    if (hc->intr_id == -1)
     {
-        mentor_slogf(r4, 12, 2, 1, "%s - %s: InterruptAttach failed.",
+        mentor_slogf(hc, 12, 2, 1, "%s - %s: InterruptAttach failed.",
             "devu-dm816x-mg.so", "mentor_interrupt_thread");
 
         return (void*)-1;
@@ -2203,10 +2196,9 @@ static void* mentor_interrupt_thread(void* a)
         fprintf(stderr, "mentor_interrupt_thread: before MsgReceivePulse\n");
 #endif
 
-        if (MsgReceivePulse(r4->chid, &pulse, sizeof(pulse), 0) == -1)
+        if (MsgReceivePulse(hc->chid, &pulse, sizeof(pulse), 0) == -1)
         {
             //->loc_8154
-            InterruptDetach(r4->intr_id);
             break;
         }
 
@@ -2215,19 +2207,21 @@ static void* mentor_interrupt_thread(void* a)
             pulse.code);
 #endif
         //0x0000811c
-        if (pulse.code == MUSB_PULSE_INTR)
+        switch (pulse.code)
         {
-            //0x00008128
-            mentor_bottom_half(r4);
-        }
-        else
-        {
-            //loc_8134
-            mentor_slogf(r4, 12, 2, 1, "%s - %s: Unknown pulse",
-                "devu-dm816x-mg.so", "mentor_interrupt_thread");
+            case MUSB_PULSE_INTR:
+                mentor_bottom_half(hc);
+                break;
+
+            default:
+                mentor_slogf(hc, 12, 2, 1, "%s - %s: Unknown pulse",
+                    "devu-dm816x-mg.so", "mentor_interrupt_thread");
+                break;
         }
         //->loc_8100
     } //while (1)
+
+    InterruptDetach(hc->intr_id);
 
     return NULL;
 }

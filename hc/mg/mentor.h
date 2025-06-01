@@ -1,5 +1,23 @@
 
 
+#ifndef _MENTOR_H_INCLUDED
+#define _MENTOR_H_INCLUDED
+
+
+#define MUSB_LOCK InterruptLock(&(hc->Data_0xd0));
+#define MUSB_UNLOCK InterruptUnlock(&(hc->Data_0xd0));
+
+#define MUSB_MUTEX_LOCK(mutex, line) 	if( pthread_mutex_lock( &hc->mutex ) ) { \
+    fprintf(stderr, "mutex lock %s %d\n", \
+        "C:/projects/beaglebone/bsp-ti-beaglebone-src/src/hardware/devu/hc/mg/mentor.c", \
+        line); }
+        
+#define MUSB_MUTEX_UNLOCK(mutex, line) 	if( pthread_mutex_unlock( &hc->mutex ) ) { \
+    fprintf(stderr, "mutex lock %s %d\n", \
+        "C:/projects/beaglebone/bsp-ti-beaglebone-src/src/hardware/devu/hc/mg/mentor.c", \
+        line); }
+
+
 #define MUSB_PULSE_INTR  				(_PULSE_CODE_MINAVAIL+1)
 
 
@@ -134,3 +152,4 @@ static inline void HW_Write16( struct _hctrl_t* c, uint32_t offset, uint16_t dat
 
 
 
+#endif //_MENTOR_H_INCLUDED
